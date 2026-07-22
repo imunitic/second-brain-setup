@@ -1,0 +1,83 @@
+#!/bin/bash
+# Installs the portable second-brain tooling (CLAUDE.md, hooks, commands,
+# skills, switch script) into ~/.claude on this machine. Merges into
+# existing settings.json rather than overwriting it. Does NOT touch
+# Obsidian itself, plugin installs, API keys/certs, or note content --
+# see setup-obsidian-mcp.sh and the README for those.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$HERE/claude"
+DEST="$HOME/.claude"
+
+command -v jq >/dev/null || { echo "jq is required. Install it first (e.g. brew install jq)." >&2; exit 1; }
+
+mkdir -p "$DEST/bin" "$DEST/hooks" "$DEST/commands" "$DEST/skills/org-task" "$DEST/skills/obsidian-task"
+
+echo "== CLAUDE.md =="
+if [ -f "$DEST/CLAUDE.md" ] && ! diff -q "$SRC/CLAUDE.md" "$DEST/CLAUDE.md" >/dev/null 2>&1; then
+  echo "  ~/.claude/CLAUDE.md already exists and differs -- not overwriting."
+  echo "  Diff manually and merge: diff '$SRC/CLAUDE.md' '$DEST/CLAUDE.md'"
+else
+  cp "$SRC/CLAUDE.md" "$DEST/CLAUDE.md"
+  echo "  installed."
+fi
+
+echo "== second-brain.conf =="
+if [ -f "$DEST/second-brain.conf" ]; then
+  echo "  already exists, leaving in place: $DEST/second-brain.conf"
+else
+  cp "$SRC/second-brain.conf.template" "$DEST/second-brain.conf"
+  echo "  installed from template -- EDIT THIS FILE (paths are machine-specific): $DEST/second-brain.conf"
+fi
+
+echo "== bin/hooks/commands/skills =="
+cp "$SRC/bin/second-brain-switch" "$DEST/bin/second-brain-switch"
+chmod +x "$DEST/bin/second-brain-switch"
+cp "$SRC/hooks/"*.sh "$DEST/hooks/"
+chmod +x "$DEST/hooks/second-brain-"*.sh
+cp "$SRC/commands/"*.md "$DEST/commands/"
+cp "$SRC/skills/org-task/SKILL.md" "$DEST/skills/org-task/SKILL.md"
+cp "$SRC/skills/obsidian-task/SKILL.md" "$DEST/skills/obsidian-task/SKILL.md"
+echo "  installed."
+
+echo "== settings.json hook wiring =="
+SETTINGS="$DEST/settings.json"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+
+TMP="$(mktemp)"
+jq '
+  .hooks = (.hooks // {}) |
+  .hooks.SessionStart = (.hooks.SessionStart // []) |
+  .hooks.PostToolUse = (.hooks.PostToolUse // []) |
+  (if any(.hooks.SessionStart[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-session-start.sh")
+   then . else .hooks.SessionStart += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-session-start.sh"}]}] end) |
+  (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-nudge.sh")
+   then . else .hooks.PostToolUse += [{"matcher":".*","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-nudge.sh"}]}] end) |
+  (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-db-sync.sh")
+   then . else .hooks.PostToolUse += [{"matcher":"Write|Edit","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-db-sync.sh"}]}] end)
+' "$SETTINGS" > "$TMP" && mv "$TMP" "$SETTINGS"
+echo "  merged (idempotent -- safe to re-run)."
+
+cat <<'EOF'
+
+== Done with the automatable part. Manual steps remaining: ==
+
+1. Edit ~/.claude/second-brain.conf -- set OBSIDIAN_VAULT_DIR (and
+   ORG_ROAM_DIR if using org-roam) for this machine.
+2. If using the obsidian backend:
+   a. Install Obsidian.app, open your vault.
+   b. Settings -> Community plugins -> Browse -> install + enable:
+      "Local REST API with MCP", "Headless Mode", "Iconic" (optional).
+   c. Run: ./setup-obsidian-mcp.sh <path-to-vault>
+      (extracts the plugin's generated cert + API key, registers the
+      MCP server, wires up NODE_EXTRA_CA_CERTS -- all automatic once
+      the plugin is installed and has generated its data.json).
+   d. Optionally add Obsidian to login items and enable "Start headless"
+      in the Headless Mode plugin settings, so it runs like a background
+      daemon (see README).
+3. If using the org-roam backend: make sure Emacs + org-roam are set up
+   per your existing config (not covered by this repo).
+4. Restart Claude Code so the new hooks/settings/MCP registration
+   actually take effect for the running session.
+EOF

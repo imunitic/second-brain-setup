@@ -1,0 +1,4 @@
+# Copy this to ~/.claude/second-brain.conf and edit the paths for this machine.
+BACKEND=obsidian
+ORG_ROAM_DIR="$HOME/Roam"
+OBSIDIAN_VAULT_DIR="$HOME/Obsidian/YourVault"
