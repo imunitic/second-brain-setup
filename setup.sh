@@ -50,12 +50,13 @@ jq '
   .hooks = (.hooks // {}) |
   .hooks.SessionStart = (.hooks.SessionStart // []) |
   .hooks.PostToolUse = (.hooks.PostToolUse // []) |
+  .hooks.Stop = (.hooks.Stop // []) |
   (if any(.hooks.SessionStart[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-session-start.sh")
    then . else .hooks.SessionStart += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-session-start.sh"}]}] end) |
-  (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-nudge.sh")
-   then . else .hooks.PostToolUse += [{"matcher":".*","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-nudge.sh"}]}] end) |
   (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-db-sync.sh")
-   then . else .hooks.PostToolUse += [{"matcher":"Write|Edit","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-db-sync.sh"}]}] end)
+   then . else .hooks.PostToolUse += [{"matcher":"Write|Edit|mcp__obsidian__vault_(write|patch|append|delete|move)","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-db-sync.sh"}]}] end) |
+  (if any(.hooks.Stop[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-stop-nudge.sh")
+   then . else .hooks.Stop += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-stop-nudge.sh"}]}] end)
 ' "$SETTINGS" > "$TMP" && mv "$TMP" "$SETTINGS"
 echo "  merged (idempotent -- safe to re-run)."
 

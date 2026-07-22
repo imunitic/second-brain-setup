@@ -142,3 +142,10 @@ though an already-running session's own tool availability, e.g. the
 does not migrate content between backends** — it only changes which one
 new activity gets written to and which index gets injected at session
 start.
+
+# Git commits
+
+Do not add a `Co-Authored-By: Claude ...` trailer to commit messages.
+Enforced via `attribution.commit: ""` in `~/.claude/settings.json`, which
+suppresses it mechanically — this note is a backstop in case that setting
+ever gets reverted or overridden by a project-level settings file.

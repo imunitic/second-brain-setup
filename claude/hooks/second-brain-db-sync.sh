@@ -1,12 +1,29 @@
 #!/bin/bash
-# PostToolUse hook (Write|Edit): keep the org-roam.db index in sync
-# immediately after an agent writes/edits a note file, instead of waiting
-# for org-roam's own autosync (file-watcher) or the next interactive save
-# in Emacs. No-op for the obsidian backend -- the MCP server reads live
-# file state directly, there's no separate index db to resync.
+# PostToolUse hook (Write|Edit|mcp__obsidian__vault_(write|patch|append|delete|move)):
+# keep the active backend's persistence layer in sync immediately after an
+# agent-driven note change.
+#
+# org-roam: update org-roam.db instead of waiting for its own autosync
+# (file-watcher) or the next interactive save in Emacs.
+#
+# obsidian: commit the change to the vault's local git repo (if one exists
+# -- this is opt-in per-vault, not assumed). Matches on the MCP vault
+# mutation tools too, not just the native Write/Edit tools, since
+# /obsidian-note and /obsidian-task write through mcp__obsidian__vault_*
+# rather than editing files directly.
 CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
 BACKEND="${BACKEND:-org-roam}"
+
+if [ "$BACKEND" = "obsidian" ]; then
+  VAULT="${OBSIDIAN_VAULT_DIR:-}"
+  [ -n "$VAULT" ] && [ -d "$VAULT/.git" ] || exit 0
+  cd "$VAULT" || exit 0
+  git add -A
+  git diff --cached --quiet && exit 0
+  git commit --quiet -m "auto: vault edit via Claude Code" || true
+  exit 0
+fi
 
 [ "$BACKEND" = "org-roam" ] || exit 0
 

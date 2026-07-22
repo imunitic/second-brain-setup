@@ -11,8 +11,11 @@ iCloud, manual copy — your call).
 - `claude/second-brain.conf.template` — backend + path config (edit paths
   per machine).
 - `claude/bin/second-brain-switch` — one-line backend switch command.
-- `claude/hooks/second-brain-*.sh` — SessionStart index injection, periodic
-  nudge, org-roam db-sync (no-ops for the obsidian backend).
+- `claude/hooks/second-brain-*.sh` — SessionStart index injection, a
+  turn-count-based Stop hook that forces a "worth capturing?" check-in
+  every 100 turns via `decision: "block"`, and org-roam db-sync (a no-op
+  under the obsidian backend, since the MCP server reads live file state
+  directly).
 - `claude/commands/roam-note.md`, `claude/commands/obsidian-note.md` —
   note-creation commands (bare/`--task`/`--list`/`--search` modes).
 - `claude/skills/org-task/`, `claude/skills/obsidian-task/` — proactive
