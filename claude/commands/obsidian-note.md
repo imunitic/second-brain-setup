@@ -49,20 +49,24 @@ Do not modify any files in search mode.
 Triggered when `--task` is given but the title doesn't match `ecs-\d+`.
 
 1. Ask the user which project this task belongs to, via a question with
-   known project/prefix pairs as options (currently just **eon → `ecs`**;
-   add more here as new projects appear). Don't skip this question just
-   because there's currently only one real choice — asking now is what
-   makes it scale cleanly once a second project exists.
+   known project/prefix pairs as options (currently **eon → `ecs`** and
+   **SBU (syrius-business-usage) → `sbu`**; add more here as new projects
+   appear). Don't skip this question just because the current repo seems
+   like an obvious single choice — asking keeps the registry accurate as
+   more projects are added, and this list is also read directly by
+   `/obsidian-design-note`/`/obsidian-task-note` to resolve a project's
+   prefix without re-asking.
 
-   The question tool requires **at least 2 explicit options**, even though
-   it always separately offers a genuine free-text "Other" choice on top of
-   whatever's listed. With only one real project, don't invent a fake
-   second option that pretends to *be* the free-text path — that's
-   confusing in practice. Instead make the second option an honest,
-   clearly-non-free-text filler, e.g.:
-   - "eon (ecs-*)" — the real project
-   - "None of these" — description: "pick Other below instead, to type a
-     new project's prefix directly"
+   The question tool requires **at least 2 explicit options**, and always
+   separately offers a genuine free-text "Other" choice on top of whatever's
+   listed — use that for any project not in the known list yet:
+   - "eon (ecs-*)" — the eon project
+   - "SBU (sbu-*)" — the syrius-business-usage project
+
+   (If the known list ever drops back to a single real project, pad it with
+   an honest, clearly-non-free-text filler like "None of these" rather than
+   a fake second real option — don't bring the filler back just because
+   there happen to be two real options today.)
 2. Once the prefix is known, find the next number: run
    `mcp__obsidian__search_query` with `{"var": "frontmatter.task_id"}`,
    filter the returned `result` values client-side for ones matching

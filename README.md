@@ -18,6 +18,12 @@ iCloud, manual copy — your call).
   directly).
 - `claude/commands/roam-note.md`, `claude/commands/obsidian-note.md` —
   note-creation commands (bare/`--task`/`--list`/`--search` modes).
+- `claude/commands/obsidian-design-note.md`, `claude/commands/obsidian-task-note.md` —
+  Obsidian-native counterparts to `claude-code-setup`'s `/design-note`/`/task-note`: a personal
+  design-discussion → compiled-checklist pipeline that lives in the vault (`designs/`, `projects/`)
+  instead of a repo's gitignored `docs/notes/`, so it's cross-project by default. Task-note creation
+  and status tracking delegate to `obsidian-note.md --task` and `skills/obsidian-task/` above, not a
+  separate mechanism.
 - `claude/skills/org-task/`, `claude/skills/obsidian-task/` — proactive
   task-status tracking skills.
 
