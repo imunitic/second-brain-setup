@@ -14,7 +14,6 @@ Not every design discussion ends with something to build. See `Status: Reference
 ```
 /obsidian-design-note "topic"           # Start or resume a design discussion
 /obsidian-design-note --continue        # Resume an incomplete design note
-/obsidian-design-note --elevate "topic" # Promote a concluded note into the CURRENT repo's Record
 /obsidian-design-note --list            # List every Obsidian design note, regardless of status
 ```
 
@@ -76,8 +75,6 @@ reads clearly, and both note kinds can be filtered together via `search_query`.
 2. Multiple → list them, ask which to continue.
 3. One → resume it.
 4. None → "No incomplete design note found. Start one with `/obsidian-design-note \"topic\"`."
-
-**--elevate "topic":** see "Elevating to a Record" below.
 
 **--list:**
 1. `mcp__obsidian__vault_list` on `designs/`, then `vault_read` each (or a `search_query` scoped to
@@ -149,52 +146,13 @@ Discussing | Ready | Reference
 
 Fetch machine local time for `created` (`date '+%Y-%m-%d %H:%M'`) — never infer it.
 
-No `Notes`/changelog section, same reasoning as `/design-note`: either this gets elevated (git commit
-history becomes the changelog) or it stays a small, single-conclusion note.
+No `Notes`/changelog section — it stays a small, single-conclusion note; there's no long-running
+edit history here worth tracking separately.
 
 ## Filename
 
 `designs/{PROJECT} — {Topic}.md` — sanitize filesystem-illegal characters (`/ : * ? " < > |`). No
 slug, no numbering — Obsidian filenames are the title itself.
-
----
-
-## Elevating to a Record (`--elevate`)
-
-Promotes a concluded Obsidian design note into the **current repo's** `docs/records/` — the same
-bridge `/design-note --elevate` provides, just reading from the vault instead of `docs/notes/`.
-
-### Prerequisites
-
-- Find the matching design note. Not found → "No design note found for '{topic}'."
-- `Status: Discussing` → "Still in Discussing — finish the conversation first (mark it Ready or
-  Reference), then elevate."
-- If no `docs/records/` directory exists in the current repo: create it.
-
-### What to do
-
-1. Carry the note's own sections over close to verbatim (Problem stays Problem, Approach becomes the
-   decision/rationale, etc.) — check this repo's actual `docs/records/*.md` for house style first;
-   don't force `/design`'s Options/Solution/Stories template onto a repo that doesn't use it (see
-   `/design-note --elevate`'s "What NOT to do" for the reasoning, unchanged here).
-2. Assign the next Record number: scan `docs/records/` for the highest `{NNN}-*.md` and increment.
-   Slug the topic for the filename (lowercase-hyphenated).
-3. Title: `# Record {NNN}: {Title}`.
-4. If a compiled task note exists (linked via the `> Compiled task:` annotation — see
-   `/obsidian-task-note`), ask whether to fold its checklist into the Record as a plain
-   `## Execution Plan` section, noting it's a snapshot ("see `[[{task note}]]` for live status").
-5. Write `docs/records/{NNN}-{slug}.md`.
-6. Annotate the Obsidian note: add `> Elevated to Record {NNN} on {today's date}.` near the top (via
-   `mcp__obsidian__vault_patch`). Don't delete or close it — it's the discussion trail, and it's
-   already durable in the vault regardless.
-7. Confirm:
-   ```
-   Elevated to Record {NNN}: docs/records/{NNN}-{slug}.md
-   Source note: designs/{title}.md (annotated)
-
-   Add a Current Status / Future row in this repo's CLAUDE.md if this should be tracked as active
-   work — that's not automatic.
-   ```
 
 ---
 
@@ -204,7 +162,6 @@ bridge `/design-note --elevate` provides, just reading from the vault instead of
   `/task-note` places on `/design-note`.
 - Fully separate from `/design-note`/`docs/notes/` — a topic lives in exactly one of the two systems,
   never both. Choose per "When to use this vs." above before starting, not after.
-- `--elevate` is the one bridge to `docs/records/`: manual, one-directional (note → Record).
 
 ---
 

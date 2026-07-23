@@ -70,10 +70,11 @@ duplicate that scaffolding here, just supply its inputs:
 ## Linking back
 
 After creation, patch the design note: add `> Compiled task: [[{task note title}]]` near the top
-(via `mcp__obsidian__vault_patch`) — mirrors the `> Elevated to Record` annotation convention. This
-is a one-time link; the design note's `Status` itself does not change and does not need to track the
-task's progress — Obsidian's own backlinks panel already surfaces the live task note from the design
-note, and the task's `status:` frontmatter is the authoritative progress signal from here on.
+(via `mcp__obsidian__vault_patch`) — a small annotation line, same idea as any other cross-reference
+you'd drop near a note's title. This is a one-time link; the design note's `Status` itself does not
+change and does not need to track the task's progress — Obsidian's own backlinks panel already
+surfaces the live task note from the design note, and the task's `status:` frontmatter is the
+authoritative progress signal from here on.
 
 ## Confirm
 
