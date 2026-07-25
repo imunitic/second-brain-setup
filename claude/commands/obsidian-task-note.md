@@ -57,9 +57,13 @@ duplicate that scaffolding here, just supply its inputs:
 - **Title:** a short, plain description of the compiled plan (e.g. "Rollup direct storage
   implementation") — `/obsidian-note --task` resolves the project prefix and `task_id` and prepends
   them itself.
-- **Project:** derive from the source design note's `project:` frontmatter. If it maps to a known
-  prefix (see `/obsidian-note`'s "Resolving a missing task ID" list), supply it directly instead of
-  re-asking. If it's genuinely new, let that command's normal resolution question run.
+- **Project:** derive from the source design note's `project:` frontmatter — that prefix is already
+  resolved (the design note went through `/obsidian-design-note`'s resolution when it was created,
+  which reads/appends `~/.claude/second-brain-projects.conf`), so supply it directly instead of
+  re-deriving or re-asking. Never hardcode a specific project/prefix pair in this command's own
+  instructions — the conf file is machine-local and deliberately outside the portable
+  second-brain-setup package, so projects from unrelated contexts (e.g. personal vs. work) must
+  never end up in the same place.
 - **Body:** the checklist from "Compiling the checklist" above, under the single top-level heading —
   exactly the structure `obsidian-task`'s "Task file structure" requires (no `## Step` sub-headings).
 - **`## Notes` (pre-implementation):** populate per `obsidian-task`'s own convention —
@@ -96,7 +100,7 @@ command doesn't set or watch that field itself.
 ```
 User: /obsidian-task-note "rollup direct storage"
 
-Claude: [reads designs/SBU — Rollup direct storage.md, Status: Ready]
+Claude: [reads designs/{PROJECT} — Rollup direct storage.md, Status: Ready]
         [no existing linked task note]
 
         Compiled checklist:
@@ -105,10 +109,10 @@ Claude: [reads designs/SBU — Rollup direct storage.md, Status: Ready]
         - [ ] Migrate existing daily/monthly rollups (drop+recreate, sort-key change)
         - [ ] Update the 5 retrofitted dashboards' rollup queries to drop argMaxMerge
 
-        Project already known: SBU → sbu-005.
+        Project already known: {PROJECT} → {prefix}-005.
 
-        Created: projects/sbu-005 — Rollup direct storage implementation.md
-        Linked back from designs/SBU — Rollup direct storage.md.
+        Created: projects/{prefix}-005 — Rollup direct storage implementation.md
+        Linked back from designs/{PROJECT} — Rollup direct storage.md.
 
         Status transitions happen automatically via the obsidian-task skill once you start work.
 ```

@@ -31,6 +31,14 @@ else
   echo "  installed from template -- EDIT THIS FILE (paths are machine-specific): $DEST/second-brain.conf"
 fi
 
+echo "== second-brain-projects.conf =="
+if [ -f "$DEST/second-brain-projects.conf" ]; then
+  echo "  already exists, leaving in place: $DEST/second-brain-projects.conf"
+else
+  cp "$SRC/second-brain-projects.conf.template" "$DEST/second-brain-projects.conf"
+  echo "  installed from template -- machine-local, self-managed by /obsidian-note: $DEST/second-brain-projects.conf"
+fi
+
 echo "== bin/hooks/commands/skills =="
 cp "$SRC/bin/second-brain-switch" "$DEST/bin/second-brain-switch"
 chmod +x "$DEST/bin/second-brain-switch"

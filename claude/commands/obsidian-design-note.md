@@ -40,16 +40,26 @@ not how seriously to take the conversation.
 
 Every design note is tagged with the project it belongs to — both in the title
 (`{PROJECT} — {Topic}`) and as `project: {prefix}` in frontmatter (the same short prefix
-`/obsidian-note --task` uses for task IDs, e.g. `sbu`, `ecs`) — so a flat `designs/` folder still
-reads clearly, and both note kinds can be filtered together via `search_query`.
+`/obsidian-note --task` uses for task IDs) — so a flat `designs/` folder still reads clearly, and
+both note kinds can be filtered together via `search_query`.
+
+Same resolution `/obsidian-note` uses for a missing task ID (its "Resolving a missing task ID"),
+reading the same file:
 
 1. Infer the project from the current repo: check its project `CLAUDE.md` (title/"About" section) or
    `git remote`.
-2. If it matches a known project/prefix pair (see `/obsidian-note`'s "Resolving a missing task ID"
-   list — currently `eon`/`ecs`, `SBU`/`sbu`), use it.
-3. If it doesn't match anything known, ask the user for a short project tag. If this turns out to be
-   a recurring project (not a one-off), add it to `/obsidian-note`'s known list too — otherwise a
-   later `/obsidian-task-note` compile for the same topic will have to ask again from scratch.
+2. Check `~/.claude/second-brain-projects.conf` (plain `project-name=prefix` lines, read/appended
+   via Read/Edit, not the vault) for a loosely-matching project name. If found, use that prefix
+   directly.
+3. If not in the file yet, fall back to searching the vault for a prefix already in use for this
+   project. If exactly one confidently matches, use it — and append the pair to the conf file.
+4. If nothing confidently matches, ask the user for a short project tag — plain free-text, not a
+   multiple-choice list, never hinting at any other project's tag as an example — then append the
+   resolved pair to the conf file.
+
+Never hardcode a specific project/prefix pair in this command's own instructions — the conf file is
+machine-local and deliberately outside the portable second-brain-setup package, so projects from
+unrelated contexts (e.g. personal vs. work) never end up in the same place.
 
 ## Handling Arguments
 
@@ -176,12 +186,12 @@ Claude: [searches designs/ for existing matches — none found]
 
 User: Replacing the AggregatingMergeTree rollup resolution with direct-value storage.
 
-Claude: [creates designs/SBU — Rollup direct storage.md, Status: Discussing]
+Claude: [creates designs/{PROJECT} — Rollup direct storage.md, Status: Discussing]
 
         What's driving this over just tuning the current argMaxMerge query?
 ...
 User: The resolution cost alone dominates the query, tuning won't fix that. Mark it ready.
 
-Claude: Design note ready: designs/SBU — Rollup direct storage.md.
+Claude: Design note ready: designs/{PROJECT} — Rollup direct storage.md.
         Generate the task with /obsidian-task-note "rollup direct storage" whenever you're ready.
 ```
