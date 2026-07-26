@@ -61,10 +61,23 @@ a real yes/no answer, not a formality to wave past.
 
 ## Backend: obsidian (current default)
 
-Vault at `$OBSIDIAN_VAULT_DIR` (see `~/.claude/second-brain.conf`), index
-note `Index.md` at the vault root. Reachable both as plain files on disk
-and live through the `obsidian` MCP server (user-scoped, so available from
-any project) backed by the Local REST API plugin.
+Obsidian runs headless at login (via a startup plugin) with the Claude
+vault already open, and the Local REST API plugin is installed there —
+this is the only valid way to query the vault, and it always targets
+whichever vault is currently open in the running Obsidian instance, not a
+hardcoded path. The `obsidian` MCP server wraps that REST API. Do not
+resolve or care about `$OBSIDIAN_VAULT_DIR` (see
+`~/.claude/second-brain.conf`) unless the MCP tools are erroring or
+unavailable and you must fall back to grepping files on disk directly —
+that path variable matters only for that fallback case, since the vault
+is also reachable as plain files on disk at that location.
+
+If a project's `.claude.json` `mcpServers.obsidian` entry ever diverges
+from the user-scoped one (e.g. points at the wrong vault path via a stdio
+`obsidian-mcp` package instead of the REST API), that's a bug in that
+project's config, not a second-brain routing choice — fix it by removing
+the project-level override so the correct user-scoped REST API server
+applies.
 
 - You may create and edit notes in this vault **without asking for
   permission first**, as long as each note is placed in the folder
