@@ -63,10 +63,18 @@ urlencode_path() {
 INDEX_VAULT_PATH="synapse/$REPO_NAME/_index.json"
 INDEX_URL="$BASE/vault/$(urlencode_path "$INDEX_VAULT_PATH")"
 
-INDEX_JSON="$(curl -s --cacert "$CERT" -H "Authorization: Bearer $API_KEY" "$INDEX_URL" || true)"
+INDEX_RESPONSE="$(curl -s -w '\n%{http_code}' --cacert "$CERT" -H "Authorization: Bearer $API_KEY" "$INDEX_URL" || true)"
+HTTP_CODE="$(printf '%s' "$INDEX_RESPONSE" | tail -n1)"
+INDEX_JSON="$(printf '%s' "$INDEX_RESPONSE" | sed '$d')"
+
 # No namespace for this repo at all -- the whole point of the opt-in
 # /synapse-init step is that this is the only cost paid for a project that
 # never ran it, and even this is only reached on an actual edit, not per turn.
+# Checking the HTTP status (not just "is the body valid JSON") matters: a 404
+# from a nonexistent _index.json comes back as a JSON error body
+# (`{"message":"Not Found",...}`), which would otherwise pass a bare `jq -e .`
+# check and get a stray `_unassigned` field written onto it.
+[ "$HTTP_CODE" = "200" ] || exit 0
 printf '%s' "$INDEX_JSON" | jq -e . >/dev/null 2>&1 || exit 0
 
 NODES="$(printf '%s' "$INDEX_JSON" | jq -r --arg rel "$REL" '.[$rel] // [] | .[]' 2>/dev/null || true)"

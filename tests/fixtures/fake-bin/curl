@@ -5,7 +5,12 @@
 #
 # Logs every invocation verbatim to $FAKE_CURL_LOG, and simulates just
 # enough of the Local REST API's /vault/{path} behavior for the hook:
-#   GET   -> prints the contents of $FAKE_CURL_INDEX_BODY (if set), else nothing
+#   GET   -> body + "\n<code>" (matching the real curl -w '\n%{http_code}' the
+#            hook uses): $FAKE_CURL_INDEX_BODY's contents + 200 if set and
+#            present, else the real API's actual 404 JSON error body + 404 --
+#            NOT an empty body, since that 404 body is itself valid JSON and a
+#            bare `jq -e .` check can't tell it apart from a real index (this
+#            is exactly the bug the hook's HTTP-status check now guards against).
 #   PUT   -> writes the --data-binary payload to $FAKE_CURL_CAPTURE_DIR/index-put.json
 #   PATCH -> appends the request URL to $FAKE_CURL_CAPTURE_DIR/patches.log
 set -euo pipefail
@@ -30,6 +35,9 @@ case "$method" in
   GET)
     if [ -n "${FAKE_CURL_INDEX_BODY:-}" ] && [ -f "$FAKE_CURL_INDEX_BODY" ]; then
       cat "$FAKE_CURL_INDEX_BODY"
+      printf '\n200'
+    else
+      printf '{"message":"Not Found","errorCode":40400}\n404'
     fi
     ;;
   PUT)

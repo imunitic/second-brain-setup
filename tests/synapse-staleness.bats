@@ -95,10 +95,16 @@ EOF
   [ ! -f "$CURL_CAPTURE/patches.log" ]
 }
 
-@test "no Synapse namespace for this repo (404 / empty response): no-op, no PUT or PATCH" {
+@test "no Synapse namespace for this repo (real 404 JSON body): no-op, no PUT or PATCH" {
+  # Regression test: the real Local REST API returns a 404 with a JSON body
+  # (`{"message":"Not Found","errorCode":40400}`), which is itself valid
+  # JSON -- a hook that only checked "is the response valid JSON" (rather
+  # than the actual HTTP status) would treat this as an existing index and
+  # PUT a stray `_unassigned` field onto it. Found in the wild: exactly this
+  # happened to two repos edited before ever running /synapse-init.
   make_repo
   # No write_synapse_index call, no --2nd-arg body -- fake curl's GET
-  # returns nothing, simulating a 404 from the real REST API.
+  # returns the real API's 404 JSON body + status 404.
   run run_staleness_hook "$REPO/src/foo.ml" ""
   [ "$status" -eq 0 ]
   [ ! -f "$CURL_CAPTURE/index-put.json" ]
