@@ -11,7 +11,8 @@ iCloud, manual copy — your call).
 - `claude/second-brain.conf.template` — backend + path config (edit paths
   per machine).
 - `claude/bin/second-brain-switch` — one-line backend switch command.
-- `claude/hooks/second-brain-*.sh` — SessionStart index injection, a
+- `claude/hooks/second-brain-*.sh` — SessionStart index injection (also
+  does the Synapse pointer check, obsidian-only — see below), a
   turn-count-based Stop hook that forces a "worth capturing?" check-in
   every 100 turns via `decision: "block"`, and org-roam db-sync (a no-op
   under the obsidian backend, since the MCP server reads live file state
@@ -26,6 +27,18 @@ iCloud, manual copy — your call).
   separate mechanism.
 - `claude/skills/org-task/`, `claude/skills/obsidian-task/` — proactive
   task-status tracking skills.
+- **Synapse** (obsidian backend only) — a per-repo semantic code graph hosted in the vault under
+  `synapse/{repo-name}/`, so Claude Code doesn't re-explore a codebase from scratch every session.
+  Dormant until `/synapse-init` is run in a repo. See [[sb — Synapse (Obsidian code-graph
+  layer)]] in the vault for the full design.
+  - `claude/commands/synapse-init.md` — first-time build (per-file-summary-then-cluster pass into
+    node notes + the two derived projections) and the manual `_unassigned`-sweep fallback for an
+    already-initialized, otherwise-dormant repo.
+  - `claude/hooks/synapse-staleness.sh` — `PostToolUse` (`Write|Edit|MultiEdit`) Tier 1: flags
+    edited files' nodes `stale` (or queues a brand-new file into `_unassigned`) via the Local REST
+    API directly, no MCP round-trip.
+  - `claude/skills/synapse-node/` — Tier 2: the lazy staleness check + regeneration + unassigned
+    sweep Claude runs itself whenever a node's body is actually read, not a hook.
 
 ## What's NOT portable (per-machine, regenerated fresh each time)
 
@@ -96,9 +109,30 @@ no restart needed). A session's own MCP tool availability (e.g. whether
 startup, so a running session needs a restart to pick up a switch either
 way.
 
+## Testing
+
+```sh
+brew install bats-core   # if not already installed
+bats tests/
+```
+
+Covers `setup.sh` (idempotent install/merge into a scratch `$HOME`),
+`second-brain-session-start.sh` (index injection + the Synapse pointer
+check, pure git/filesystem, no network), and `synapse-staleness.sh`
+(Tier 1 staleness flagging, with `tests/fixtures/fake-bin/curl` stubbing
+out the Obsidian Local REST API so no real vault or plugin is needed).
+Every test runs against a throwaway `$HOME`/git repo/vault created in
+`tests/test_helper.bash` — nothing here touches your real `~/.claude` or
+vault.
+
+Not covered by these tests: `claude/commands/synapse-init.md` and
+`claude/skills/synapse-node/SKILL.md` are natural-language procedures
+Claude follows, not code — there's nothing for a test framework to
+execute there.
+
 ## Dependencies
 
-`jq`, `pandoc` (if you ever need to re-run the org→Obsidian conversion
-scripts — not included here, they were one-off migration scripts, not
-part of the ongoing tooling), `sqlite3` (org-roam backend only), the
-`claude` CLI.
+`jq`, `bats-core` (tests only), `pandoc` (if you ever need to re-run the
+org→Obsidian conversion scripts — not included here, they were one-off
+migration scripts, not part of the ongoing tooling), `sqlite3` (org-roam
+backend only), the `claude` CLI.

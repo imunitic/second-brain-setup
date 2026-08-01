@@ -12,7 +12,7 @@ DEST="$HOME/.claude"
 
 command -v jq >/dev/null || { echo "jq is required. Install it first (e.g. brew install jq)." >&2; exit 1; }
 
-mkdir -p "$DEST/bin" "$DEST/hooks" "$DEST/commands" "$DEST/skills/org-task" "$DEST/skills/obsidian-task"
+mkdir -p "$DEST/bin" "$DEST/hooks" "$DEST/commands" "$DEST/skills/org-task" "$DEST/skills/obsidian-task" "$DEST/skills/synapse-node"
 
 echo "== CLAUDE.md =="
 if [ -f "$DEST/CLAUDE.md" ] && ! diff -q "$SRC/CLAUDE.md" "$DEST/CLAUDE.md" >/dev/null 2>&1; then
@@ -43,10 +43,11 @@ echo "== bin/hooks/commands/skills =="
 cp "$SRC/bin/second-brain-switch" "$DEST/bin/second-brain-switch"
 chmod +x "$DEST/bin/second-brain-switch"
 cp "$SRC/hooks/"*.sh "$DEST/hooks/"
-chmod +x "$DEST/hooks/second-brain-"*.sh
+chmod +x "$DEST/hooks/"*.sh
 cp "$SRC/commands/"*.md "$DEST/commands/"
 cp "$SRC/skills/org-task/SKILL.md" "$DEST/skills/org-task/SKILL.md"
 cp "$SRC/skills/obsidian-task/SKILL.md" "$DEST/skills/obsidian-task/SKILL.md"
+cp "$SRC/skills/synapse-node/SKILL.md" "$DEST/skills/synapse-node/SKILL.md"
 echo "  installed."
 
 echo "== settings.json hook wiring =="
@@ -63,6 +64,8 @@ jq '
    then . else .hooks.SessionStart += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-session-start.sh"}]}] end) |
   (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-db-sync.sh")
    then . else .hooks.PostToolUse += [{"matcher":"Write|Edit|mcp__obsidian__vault_(write|patch|append|delete|move)","hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-db-sync.sh"}]}] end) |
+  (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/synapse-staleness.sh")
+   then . else .hooks.PostToolUse += [{"matcher":"Write|Edit|MultiEdit","hooks":[{"type":"command","command":"bash ~/.claude/hooks/synapse-staleness.sh"}]}] end) |
   (if any(.hooks.Stop[]?.hooks[]?; .command == "bash ~/.claude/hooks/second-brain-stop-nudge.sh")
    then . else .hooks.Stop += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/second-brain-stop-nudge.sh"}]}] end)
 ' "$SETTINGS" > "$TMP" && mv "$TMP" "$SETTINGS"

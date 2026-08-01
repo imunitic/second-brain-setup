@@ -1,0 +1,46 @@
+#!/bin/bash
+# Fake `curl` standing in for the Obsidian Local REST API in tests, so
+# synapse-staleness.sh's HTTP calls can be asserted on without a real
+# Obsidian instance. Put this directory ahead of the real curl on PATH.
+#
+# Logs every invocation verbatim to $FAKE_CURL_LOG, and simulates just
+# enough of the Local REST API's /vault/{path} behavior for the hook:
+#   GET   -> prints the contents of $FAKE_CURL_INDEX_BODY (if set), else nothing
+#   PUT   -> writes the --data-binary payload to $FAKE_CURL_CAPTURE_DIR/index-put.json
+#   PATCH -> appends the request URL to $FAKE_CURL_CAPTURE_DIR/patches.log
+set -euo pipefail
+
+: "${FAKE_CURL_LOG:?FAKE_CURL_LOG must be set}"
+printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
+
+args=("$@")
+n=${#args[@]}
+url="${args[$((n-1))]}"
+
+method="GET"
+data=""
+for ((i = 0; i < n; i++)); do
+  case "${args[$i]}" in
+    -X) method="${args[$((i+1))]}" ;;
+    --data-binary|--data-raw) data="${args[$((i+1))]}" ;;
+  esac
+done
+
+case "$method" in
+  GET)
+    if [ -n "${FAKE_CURL_INDEX_BODY:-}" ] && [ -f "$FAKE_CURL_INDEX_BODY" ]; then
+      cat "$FAKE_CURL_INDEX_BODY"
+    fi
+    ;;
+  PUT)
+    [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ] || exit 0
+    mkdir -p "$FAKE_CURL_CAPTURE_DIR"
+    printf '%s' "$data" > "$FAKE_CURL_CAPTURE_DIR/index-put.json"
+    ;;
+  PATCH)
+    [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ] || exit 0
+    mkdir -p "$FAKE_CURL_CAPTURE_DIR"
+    printf '%s\n' "$url" >> "$FAKE_CURL_CAPTURE_DIR/patches.log"
+    ;;
+esac
+exit 0
