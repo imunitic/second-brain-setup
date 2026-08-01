@@ -1,15 +1,13 @@
 ---
-name: obsidian-task
+name: sb-task
 description: Update Obsidian task notes' status frontmatter and Notes sections, enforcing status transitions so active work is IN-PROGRESS and completed checklists move only to REVIEW (not DONE).
 ---
 
-# Obsidian Task Status Skill
+# Second Brain Task Status Skill
 
-Markdown/Obsidian counterpart to `org-task`, for task notes tracked in the
-Obsidian second-brain vault instead of org-roam. Same state machine, same
-guardrails — the only real difference is the storage format: a `status:`
-frontmatter field instead of an org heading keyword, and GFM `- [ ]`/`- [x]`
-checklists (already the native format here, no conversion needed).
+Tracks status for task notes created via `/sb-note --task` and compiled via `/sb-task-note`,
+using a `status:` frontmatter field and GFM `- [ ]`/`- [x]` checklists (the vault's native format,
+no conversion needed).
 
 ## When to invoke (proactive — do not wait to be asked)
 
@@ -25,8 +23,7 @@ Invoke this skill **automatically** in two situations:
    `last_updated`, and append an implementation summary to the `## Notes`
    section.
 
-Never wait for the user to explicitly call `/obsidian-task` — apply it
-proactively at both transitions.
+Never wait to be asked — apply this skill proactively at both transitions.
 
 ## What this skill does
 
@@ -180,9 +177,8 @@ When the user asks to create a GitHub issue from a task note:
    implementation` → title `ecs-035 — Time resource implementation`.
 2. **Body** — the full content of the top-level heading section: the
    description paragraph and all checklist items (with any inline code
-   blocks). **No conversion step needed** — the note is already GFM
-   Markdown, unlike org-task's org→GFM pandoc pipeline, so this goes
-   straight into `gh issue create --body-file` unchanged.
+   blocks) — already GFM Markdown, so this goes straight into
+   `gh issue create --body-file` unchanged.
 3. **First comment** — the full content of the `## Notes` section,
    including any dated sub-headings and their bullets, straight into
    `gh issue comment --body-file` unchanged.
@@ -211,6 +207,6 @@ repos/<owner>/<repo>/issues/<n>/comments`).
 - **Never write `DONE`** — not in `status:`, not manually, not through any
   other path. The cap is always `REVIEW`.
 - Preserve `task_id` untouched — it is set manually (or resolved once by
-  `/obsidian-note --task`) and must not be auto-generated or overwritten.
+  `/sb-note --task`) and must not be auto-generated or overwritten.
 - If checklist content is ambiguous or missing, default to `IN-PROGRESS`.
 - Keep notes wording deterministic; avoid speculative claims.

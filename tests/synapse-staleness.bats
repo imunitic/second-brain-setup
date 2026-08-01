@@ -105,11 +105,8 @@ EOF
   [ ! -f "$CURL_CAPTURE/patches.log" ]
 }
 
-@test "org-roam backend: exits before any curl call at all" {
-  cat > "$HOME/.claude/second-brain.conf" <<EOF
-BACKEND=org-roam
-ORG_ROAM_DIR="$TEST_HOME/roam"
-OBSIDIAN_VAULT_DIR="$VAULT"
+@test "no OBSIDIAN_VAULT_DIR configured: exits before any curl call at all" {
+  cat > "$HOME/.claude/second-brain.conf" <<'EOF'
 EOF
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"

@@ -8,13 +8,13 @@ If `$ARGUMENTS` starts with `--search` → **search mode**: see "Search mode" be
 
 Otherwise, split `$ARGUMENTS` on `--task`:
 
-- If `--task` is present → **task mode**: scaffold the note as a tracked task, following the `obsidian-task` skill's conventions. Task notes always live under `projects/`.
+- If `--task` is present → **task mode**: scaffold the note as a tracked task, following the `sb-task` skill's conventions. Task notes always live under `projects/`.
 - Otherwise → **bare mode**: create an empty node (title + frontmatter only). Which category folder it lands in (`projects` / `research` / `scratchpad`) is resolved in "Choosing a category (bare mode only)" below.
 
 The title is everything before `--task` (trimmed). Example:
 
-- `/obsidian-note "My idea"` → bare note titled "My idea"
-- `/obsidian-note "proj-035 — Implement Foo" --task` → task note titled "proj-035 — Implement Foo"
+- `/sb-note "My idea"` → bare note titled "My idea"
+- `/sb-note "proj-035 — Implement Foo" --task` → task note titled "proj-035 — Implement Foo"
 
 In task mode, also attempt to extract a task ID from the title by matching a `{prefix}-\d+` pattern (letters, a hyphen, then digits). Use it as `task_id` in frontmatter.
 
@@ -86,7 +86,7 @@ at any time.
    use the resolved task ID for `task_id`. Don't let the frontmatter task
    ID and the visible title disagree.
 
-`/obsidian-design-note`/`/obsidian-task-note` read the same conf file directly for the same reason —
+`/sb-design-note`/`/sb-task-note` read the same conf file directly for the same reason —
 they don't duplicate this resolution logic, just this file.
 
 ## Choosing a category (bare mode only)
@@ -101,10 +101,10 @@ question with these options:
 - **scratchpad** — description: "throwaway or in-progress, not yet worth filing"
 
 Resolve this to a `category` (`"projects"`, `"research"`, or `"scratchpad"`)
-before moving on to the creation steps below. Unlike `/roam-note`, no
-project-slug question is needed here — Obsidian filenames are the title
-itself, not a slug-prefixed timestamp, so there's no separate namespacing
-concern to resolve.
+before moving on to the creation steps below. No project-slug question is
+needed here — Obsidian filenames are the title itself, not a
+slug-prefixed timestamp, so there's no separate namespacing concern to
+resolve.
 
 ## Creating the note
 
@@ -151,4 +151,4 @@ Report the file path back to the user.
 - Bare mode: note that the note is intentionally near-empty.
 - Task mode: note the task ID extracted or resolved, and remind the user
   to populate the `## Notes` section and checklist before starting work,
-  per the `obsidian-task` skill.
+  per the `sb-task` skill.

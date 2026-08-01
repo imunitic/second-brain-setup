@@ -1,4 +1,4 @@
-# Obsidian Design Note: Cross-Project Personal Design Discussion
+# Second Brain Design Note: Cross-Project Personal Design Discussion
 
 The Obsidian-vault counterpart to `/design-note` — same free-form "think it through out loud"
 pipeline, but the note lives in the second-brain vault instead of the current repo's `docs/notes/`.
@@ -12,14 +12,14 @@ Not every design discussion ends with something to build. See `Status: Reference
 ## Usage
 
 ```
-/obsidian-design-note "topic"           # Start or resume a design discussion
-/obsidian-design-note --continue        # Resume an incomplete design note
-/obsidian-design-note --list            # List every Obsidian design note, regardless of status
+/sb-design-note "topic"           # Start or resume a design discussion
+/sb-design-note --continue        # Resume an incomplete design note
+/sb-design-note --list            # List every Obsidian design note, regardless of status
 ```
 
 ## When to use this vs. `/design-note` vs. `/design`
 
-| Use `/obsidian-design-note` when... | Use `/design-note` when... | Use `/design` when... |
+| Use `/sb-design-note` when... | Use `/design-note` when... | Use `/design` when... |
 |---|---|---|
 | Might be relevant beyond this one repo, or you want it searchable from anywhere | Purely local to this repo's work, fine being invisible elsewhere | Team needs to see the decision |
 | Fine living in the shared personal vault | Fine with a private, gitignored note in this repo | Feature will definitely ship, others are affected |
@@ -40,10 +40,10 @@ not how seriously to take the conversation.
 
 Every design note is tagged with the project it belongs to — both in the title
 (`{PROJECT} — {Topic}`) and as `project: {prefix}` in frontmatter (the same short prefix
-`/obsidian-note --task` uses for task IDs) — so a flat `designs/` folder still reads clearly, and
+`/sb-note --task` uses for task IDs) — so a flat `designs/` folder still reads clearly, and
 both note kinds can be filtered together via `search_query`.
 
-Same resolution `/obsidian-note` uses for a missing task ID (its "Resolving a missing task ID"),
+Same resolution `/sb-note` uses for a missing task ID (its "Resolving a missing task ID"),
 reading the same file:
 
 1. Infer the project from the current repo: check its project `CLAUDE.md` (title/"About" section) or
@@ -84,12 +84,12 @@ unrelated contexts (e.g. personal vs. work) never end up in the same place.
 1. Find notes with `Status: Discussing` (same lookup as "No arguments").
 2. Multiple → list them, ask which to continue.
 3. One → resume it.
-4. None → "No incomplete design note found. Start one with `/obsidian-design-note \"topic\"`."
+4. None → "No incomplete design note found. Start one with `/sb-design-note \"topic\"`."
 
 **--list:**
 1. `mcp__obsidian__vault_list` on `designs/`, then `vault_read` each (or a `search_query` scoped to
    that path) to pull title and `## Status`.
-2. None found → "No design notes yet. Start one with `/obsidian-design-note \"topic\"`."
+2. None found → "No design notes yet. Start one with `/sb-design-note \"topic\"`."
 3. Group into **Active** (`Discussing`, `Ready`) and **Closed** (`Reference`) — active first. Same
    output shape as `/design-note --list` (title + status in backticks, not bold).
 
@@ -112,7 +112,7 @@ Same rule as `/design-note`:
 
 - **Something to build** → `Status: Ready`. Confirm: "Design note ready: `designs/{title}.md`.
   Whenever you're ready to implement, generate the task with
-  `/obsidian-task-note \"{topic}\"` — no rush, nothing here expires."
+  `/sb-task-note \"{topic}\"` — no rush, nothing here expires."
 - **Nothing to build** → `Status: Reference`. Confirm: "Design note concluded as Reference:
   `designs/{title}.md`. No task note needed."
 
@@ -168,7 +168,7 @@ slug, no numbering — Obsidian filenames are the title itself.
 
 ## Integration
 
-- `/obsidian-task-note "{topic}"` reads the matching `Ready` note as its only input, same restriction
+- `/sb-task-note "{topic}"` reads the matching `Ready` note as its only input, same restriction
   `/task-note` places on `/design-note`.
 - Fully separate from `/design-note`/`docs/notes/` — a topic lives in exactly one of the two systems,
   never both. Choose per "When to use this vs." above before starting, not after.
@@ -178,7 +178,7 @@ slug, no numbering — Obsidian filenames are the title itself.
 ## Example
 
 ```
-User: /obsidian-design-note "rollup direct storage"
+User: /sb-design-note "rollup direct storage"
 
 Claude: [searches designs/ for existing matches — none found]
 
@@ -193,5 +193,5 @@ Claude: [creates designs/{PROJECT} — Rollup direct storage.md, Status: Discuss
 User: The resolution cost alone dominates the query, tuning won't fix that. Mark it ready.
 
 Claude: Design note ready: designs/{PROJECT} — Rollup direct storage.md.
-        Generate the task with /obsidian-task-note "rollup direct storage" whenever you're ready.
+        Generate the task with /sb-task-note "rollup direct storage" whenever you're ready.
 ```

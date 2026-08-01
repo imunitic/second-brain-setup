@@ -1,27 +1,20 @@
 #!/bin/bash
-# SessionStart hook: inject the active second-brain backend's index note
-# so every session starts with the second-brain map already in context
-# instead of relying on the agent to think to go read it.
+# SessionStart hook: inject the vault's Index.md so every session starts
+# with the second-brain map already in context instead of relying on the
+# agent to think to go read it.
 #
-# Also does the Synapse pointer check (see sb-001 -- Synapse implementation):
-# obsidian-only, since Synapse nodes live in the vault. The existence check
-# below is a plain path lookup, never a model call or an HTTP round-trip --
-# that's what keeps this zero-cost for every repo that never ran
-# /synapse-init.
+# Also does the Synapse pointer check (see sb-001 -- Synapse implementation).
+# The existence check below is a plain path lookup, never a model call or
+# an HTTP round-trip -- that's what keeps this zero-cost for every repo
+# that never ran /synapse-init.
 CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
-BACKEND="${BACKEND:-org-roam}"
 
-if [ "$BACKEND" = "obsidian" ]; then
-  INDEX="${OBSIDIAN_VAULT_DIR:-}/Index.md"
-  LABEL="Obsidian second-brain index"
-else
-  INDEX="${ORG_ROAM_DIR:-$HOME/Roam}/index.org"
-  LABEL="Org-roam second-brain index"
-fi
+INDEX="${OBSIDIAN_VAULT_DIR:-}/Index.md"
+LABEL="Obsidian second-brain index"
 
 SYNAPSE_LINE=""
-if [ "$BACKEND" = "obsidian" ] && [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
+if [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
   INPUT="$(cat)"
   CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty')"
   [ -n "$CWD" ] || CWD="$PWD"

@@ -36,13 +36,33 @@ hook_count() {
   [ -x "$HOME/.claude/hooks/second-brain-session-start.sh" ]
 
   [ -f "$HOME/.claude/commands/synapse-init.md" ]
+  [ -f "$HOME/.claude/commands/sb-note.md" ]
+  [ -f "$HOME/.claude/commands/sb-design-note.md" ]
+  [ -f "$HOME/.claude/commands/sb-task-note.md" ]
   [ -f "$HOME/.claude/skills/synapse-node/SKILL.md" ]
-  [ -f "$HOME/.claude/skills/org-task/SKILL.md" ]
-  [ -f "$HOME/.claude/skills/obsidian-task/SKILL.md" ]
+  [ -f "$HOME/.claude/skills/sb-task/SKILL.md" ]
 
   [ -f "$HOME/.claude/CLAUDE.md" ]
-  [ -f "$HOME/.claude/bin/second-brain-switch" ]
-  [ -x "$HOME/.claude/bin/second-brain-switch" ]
+}
+
+@test "first run: no org-roam-era files installed (bin/, org-task, roam-note)" {
+  run bash "$SETUP_SH"
+  [ "$status" -eq 0 ]
+
+  [ ! -e "$HOME/.claude/bin/second-brain-switch" ]
+  [ ! -e "$HOME/.claude/skills/org-task" ]
+  [ ! -e "$HOME/.claude/commands/roam-note.md" ]
+}
+
+@test "re-running warns about stale pre-rename files without touching them" {
+  mkdir -p "$HOME/.claude/skills/obsidian-task"
+  echo "stale" > "$HOME/.claude/skills/obsidian-task/SKILL.md"
+
+  run bash "$SETUP_SH"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"stale files from before the sb- rename"* ]]
+  # Left in place, not deleted -- setup.sh only warns, never removes.
+  [ -f "$HOME/.claude/skills/obsidian-task/SKILL.md" ]
 }
 
 @test "first run wires all four hooks into settings.json exactly once" {
@@ -88,7 +108,7 @@ EOF
 
 @test "second-brain.conf: left untouched if it already exists" {
   cat > "$HOME/.claude/second-brain.conf" <<'EOF'
-BACKEND=org-roam
+OBSIDIAN_VAULT_DIR="/some/custom/path"
 CUSTOM_MARKER=do-not-clobber
 EOF
   run bash "$SETUP_SH"
@@ -103,7 +123,7 @@ EOF
   [ "$status" -eq 0 ]
 
   [ -f "$HOME/.claude/second-brain.conf" ]
-  grep -q "^BACKEND=" "$HOME/.claude/second-brain.conf"
+  grep -q "^OBSIDIAN_VAULT_DIR=" "$HOME/.claude/second-brain.conf"
 }
 
 @test "CLAUDE.md: not overwritten if an existing one differs" {

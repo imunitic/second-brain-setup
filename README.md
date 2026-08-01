@@ -1,36 +1,28 @@
 # second-brain-setup
 
-Portable packaging of the backend-agnostic second-brain tooling (org-roam ⟷
-Obsidian) built for Claude Code. Covers the *tooling* only — not your actual
-notes/vault content, which is a separate sync concern (git, Obsidian Sync,
-iCloud, manual copy — your call).
+Portable packaging of the Obsidian-backed second-brain tooling built for Claude Code. Covers the
+*tooling* only — not your actual notes/vault content, which is a separate sync concern (git,
+Obsidian Sync, iCloud, manual copy — your call).
 
 ## What's in here (fully portable, no secrets)
 
 - `claude/CLAUDE.md` — the global memory-system instructions.
-- `claude/second-brain.conf.template` — backend + path config (edit paths
-  per machine).
-- `claude/bin/second-brain-switch` — one-line backend switch command.
-- `claude/hooks/second-brain-*.sh` — SessionStart index injection (also
-  does the Synapse pointer check, obsidian-only — see below), a
-  turn-count-based Stop hook that forces a "worth capturing?" check-in
-  every 100 turns via `decision: "block"`, and org-roam db-sync (a no-op
-  under the obsidian backend, since the MCP server reads live file state
-  directly).
-- `claude/commands/roam-note.md`, `claude/commands/obsidian-note.md` —
-  note-creation commands (bare/`--task`/`--list`/`--search` modes).
-- `claude/commands/obsidian-design-note.md`, `claude/commands/obsidian-task-note.md` —
-  Obsidian-native counterparts to `claude-code-setup`'s `/design-note`/`/task-note`: a personal
-  design-discussion → compiled-checklist pipeline that lives in the vault (`designs/`, `projects/`)
-  instead of a repo's gitignored `docs/notes/`, so it's cross-project by default. Task-note creation
-  and status tracking delegate to `obsidian-note.md --task` and `skills/obsidian-task/` above, not a
-  separate mechanism.
-- `claude/skills/org-task/`, `claude/skills/obsidian-task/` — proactive
-  task-status tracking skills.
-- **Synapse** (obsidian backend only) — a per-repo semantic code graph hosted in the vault under
-  `synapse/{repo-name}/`, so Claude Code doesn't re-explore a codebase from scratch every session.
-  Dormant until `/synapse-init` is run in a repo. See [[sb — Synapse (Obsidian code-graph
-  layer)]] in the vault for the full design.
+- `claude/second-brain.conf.template` — path config (edit `OBSIDIAN_VAULT_DIR` per machine).
+- `claude/hooks/second-brain-*.sh` — SessionStart index injection (also does the Synapse pointer
+  check, see below), a turn-count-based Stop hook that forces a "worth capturing?" check-in every
+  25 turns, and a db-sync hook that commits vault changes to the vault's own local git repo, if one
+  exists.
+- `claude/commands/sb-note.md` — note-creation command (bare/`--task`/`--list`/`--search` modes).
+- `claude/commands/sb-design-note.md`, `claude/commands/sb-task-note.md` — a personal
+  design-discussion → compiled-checklist pipeline that lives in the vault (`designs/`,
+  `projects/`) instead of a repo's gitignored `docs/notes/`, so it's cross-project by default.
+  Task-note creation and status tracking delegate to `sb-note.md --task` and `skills/sb-task/`
+  above, not a separate mechanism.
+- `claude/skills/sb-task/` — proactive task-status tracking skill.
+- **Synapse** — a per-repo semantic code graph hosted in the vault under `synapse/{repo-name}/`,
+  so Claude Code doesn't re-explore a codebase from scratch every session. Dormant until
+  `/synapse-init` is run in a repo. See [[sb — Synapse (Obsidian code-graph layer)]] in the vault
+  for the full design.
   - `claude/commands/synapse-init.md` — first-time build (per-file-summary-then-cluster pass into
     node notes + the two derived projections) and the manual `_unassigned`-sweep fallback for an
     already-initialized, otherwise-dormant repo.
@@ -63,8 +55,6 @@ cd ~/second-brain-setup
 entries into `~/.claude/settings.json` (idempotent — safe to re-run,
 doesn't clobber unrelated settings), and prints the manual steps below.
 
-### If using the `obsidian` backend
-
 1. Install Obsidian, open (or create) your vault.
 2. **Settings → Community plugins → Browse**, install + enable:
    - **Local REST API with MCP** (required — the actual bridge)
@@ -81,33 +71,17 @@ doesn't clobber unrelated settings), and prints the manual steps below.
    scope (available from any project, any directory). Safe to re-run if
    you ever reinstall the plugin (new cert/key each time).
 4. Edit `~/.claude/second-brain.conf`: set `OBSIDIAN_VAULT_DIR` to the
-   vault path, and `BACKEND=obsidian`.
+   vault path.
 5. (Recommended) Add Obsidian to macOS login items so it's always running:
    ```sh
    osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Obsidian.app", hidden:false}'
    ```
 6. Restart Claude Code.
 
-### If using the `org-roam` backend
-
-1. Set up Emacs + org-roam per your own config (not covered here — this
-   repo assumes you already have an org-roam vault and an Emacs daemon
-   reachable via `emacsclient`).
-2. Edit `~/.claude/second-brain.conf`: set `ORG_ROAM_DIR` to your vault
-   path, and `BACKEND=org-roam`.
-3. Restart Claude Code.
-
-## Switching backends later
-
-```sh
-~/.claude/bin/second-brain-switch obsidian   # or org-roam
-```
-
-Takes effect immediately for hooks (fresh bash process each firing —
-no restart needed). A session's own MCP tool availability (e.g. whether
-`mcp__obsidian__*` tools are loaded) is still fixed at that session's
-startup, so a running session needs a restart to pick up a switch either
-way.
+If you're upgrading an existing install that predates the `sb-*` rename (formerly
+`obsidian-note`/`obsidian-design-note`/`obsidian-task-note`/`obsidian-task`) or the removal of the
+org-roam backend, re-running `setup.sh` will flag any stale files left over from the old names/skill
+under `~/.claude/` so you can remove them by hand.
 
 ## Testing
 
@@ -132,7 +106,4 @@ execute there.
 
 ## Dependencies
 
-`jq`, `bats-core` (tests only), `pandoc` (if you ever need to re-run the
-org→Obsidian conversion scripts — not included here, they were one-off
-migration scripts, not part of the ongoing tooling), `sqlite3` (org-roam
-backend only), the `claude` CLI.
+`jq`, `bats-core` (tests only), the `claude` CLI.

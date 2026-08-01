@@ -34,7 +34,7 @@ Every step below needs the same three facts, resolved once up front:
 2. **Repo name:** basename of the repo root. This is the Synapse namespace key
    (`synapse/{repo-name}/`) — a plain, readable folder name, not a collision-proof key (see the
    design note's Alternatives for why). Distinct from the short task-prefix scheme
-   (`project-name=prefix`) used by `/obsidian-note`/`/obsidian-design-note` — unrelated
+   (`project-name=prefix`) used by `/sb-note`/`/sb-design-note` — unrelated
    conventions that happen to both involve the word "project."
 3. **Remote:** `git remote get-url origin` (or any configured remote if `origin` doesn't exist —
    pick the first one `git remote` lists). If the repo has no remote at all, fall back to the

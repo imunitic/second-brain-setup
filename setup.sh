@@ -1,9 +1,9 @@
 #!/bin/bash
 # Installs the portable second-brain tooling (CLAUDE.md, hooks, commands,
-# skills, switch script) into ~/.claude on this machine. Merges into
-# existing settings.json rather than overwriting it. Does NOT touch
-# Obsidian itself, plugin installs, API keys/certs, or note content --
-# see setup-obsidian-mcp.sh and the README for those.
+# skills) into ~/.claude on this machine. Merges into existing
+# settings.json rather than overwriting it. Does NOT touch Obsidian
+# itself, plugin installs, API keys/certs, or note content -- see
+# setup-obsidian-mcp.sh and the README for those.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,7 +12,7 @@ DEST="$HOME/.claude"
 
 command -v jq >/dev/null || { echo "jq is required. Install it first (e.g. brew install jq)." >&2; exit 1; }
 
-mkdir -p "$DEST/bin" "$DEST/hooks" "$DEST/commands" "$DEST/skills/org-task" "$DEST/skills/obsidian-task" "$DEST/skills/synapse-node"
+mkdir -p "$DEST/hooks" "$DEST/commands" "$DEST/skills/sb-task" "$DEST/skills/synapse-node"
 
 echo "== CLAUDE.md =="
 if [ -f "$DEST/CLAUDE.md" ] && ! diff -q "$SRC/CLAUDE.md" "$DEST/CLAUDE.md" >/dev/null 2>&1; then
@@ -36,19 +36,22 @@ if [ -f "$DEST/second-brain-projects.conf" ]; then
   echo "  already exists, leaving in place: $DEST/second-brain-projects.conf"
 else
   cp "$SRC/second-brain-projects.conf.template" "$DEST/second-brain-projects.conf"
-  echo "  installed from template -- machine-local, self-managed by /obsidian-note: $DEST/second-brain-projects.conf"
+  echo "  installed from template -- machine-local, self-managed by /sb-note: $DEST/second-brain-projects.conf"
 fi
 
-echo "== bin/hooks/commands/skills =="
-cp "$SRC/bin/second-brain-switch" "$DEST/bin/second-brain-switch"
-chmod +x "$DEST/bin/second-brain-switch"
+echo "== hooks/commands/skills =="
 cp "$SRC/hooks/"*.sh "$DEST/hooks/"
 chmod +x "$DEST/hooks/"*.sh
 cp "$SRC/commands/"*.md "$DEST/commands/"
-cp "$SRC/skills/org-task/SKILL.md" "$DEST/skills/org-task/SKILL.md"
-cp "$SRC/skills/obsidian-task/SKILL.md" "$DEST/skills/obsidian-task/SKILL.md"
+cp "$SRC/skills/sb-task/SKILL.md" "$DEST/skills/sb-task/SKILL.md"
 cp "$SRC/skills/synapse-node/SKILL.md" "$DEST/skills/synapse-node/SKILL.md"
 echo "  installed."
+if [ -d "$DEST/skills/obsidian-task" ] || [ -f "$DEST/bin/second-brain-switch" ] || ls "$DEST/commands/obsidian-"*.md >/dev/null 2>&1 || [ -d "$DEST/skills/org-task" ]; then
+  echo "  NOTE: found stale files from before the sb- rename / org-roam removal --"
+  echo "    $DEST/skills/obsidian-task/, $DEST/skills/org-task/, $DEST/bin/second-brain-switch,"
+  echo "    $DEST/commands/obsidian-*.md are no longer installed by this script and are safe"
+  echo "    to remove by hand."
+fi
 
 echo "== settings.json hook wiring =="
 SETTINGS="$DEST/settings.json"
@@ -75,21 +78,18 @@ cat <<'EOF'
 
 == Done with the automatable part. Manual steps remaining: ==
 
-1. Edit ~/.claude/second-brain.conf -- set OBSIDIAN_VAULT_DIR (and
-   ORG_ROAM_DIR if using org-roam) for this machine.
-2. If using the obsidian backend:
-   a. Install Obsidian.app, open your vault.
-   b. Settings -> Community plugins -> Browse -> install + enable:
-      "Local REST API with MCP", "Headless Mode", "Iconic" (optional).
-   c. Run: ./setup-obsidian-mcp.sh <path-to-vault>
-      (extracts the plugin's generated cert + API key, registers the
-      MCP server, wires up NODE_EXTRA_CA_CERTS -- all automatic once
-      the plugin is installed and has generated its data.json).
-   d. Optionally add Obsidian to login items and enable "Start headless"
-      in the Headless Mode plugin settings, so it runs like a background
-      daemon (see README).
-3. If using the org-roam backend: make sure Emacs + org-roam are set up
-   per your existing config (not covered by this repo).
-4. Restart Claude Code so the new hooks/settings/MCP registration
+1. Edit ~/.claude/second-brain.conf -- set OBSIDIAN_VAULT_DIR for this
+   machine.
+2. Install Obsidian.app, open your vault.
+3. Settings -> Community plugins -> Browse -> install + enable:
+   "Local REST API with MCP", "Headless Mode", "Iconic" (optional).
+4. Run: ./setup-obsidian-mcp.sh <path-to-vault>
+   (extracts the plugin's generated cert + API key, registers the
+   MCP server, wires up NODE_EXTRA_CA_CERTS -- all automatic once
+   the plugin is installed and has generated its data.json).
+5. Optionally add Obsidian to login items and enable "Start headless"
+   in the Headless Mode plugin settings, so it runs like a background
+   daemon (see README).
+6. Restart Claude Code so the new hooks/settings/MCP registration
    actually take effect for the running session.
 EOF

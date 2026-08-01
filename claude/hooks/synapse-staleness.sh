@@ -4,16 +4,11 @@
 # certainty which file just changed, so this is pure bookkeeping (no
 # git-hash verification, that's Tier 2 at read time). Talks to the Obsidian
 # Local REST API directly rather than through the mcp__obsidian__ tools,
-# same reasoning as second-brain-db-sync.sh's obsidian branch.
-#
-# Synapse is obsidian-only (nodes live in the vault); a no-op under the
-# org-roam backend.
+# same reasoning as second-brain-db-sync.sh.
 set -euo pipefail
 
 CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
-BACKEND="${BACKEND:-org-roam}"
-[ "$BACKEND" = "obsidian" ] || exit 0
 
 VAULT="${OBSIDIAN_VAULT_DIR:-}"
 [ -n "$VAULT" ] && [ -d "$VAULT" ] || exit 0

@@ -1,31 +1,24 @@
 #!/bin/bash
 # Stop hook: every N turns, force a genuine "is anything worth capturing in
 # the second brain" check-in. Uses hookSpecificOutput.additionalContext (not
-# decision:block) -- the org-roam-era predecessor (org-roam-nudge.sh) used
-# this same shape and reliably produced immediate, visible action, with the
-# CLI labeling it "Stop hook feedback" instead of the alarming-looking "Stop
-# hook error" that decision:block renders as. Switched back to this shape
-# 2026-07-23 specifically for the better label -- confirm empirically that
-# it still fires immediately; if it turns out to silently defer instead,
-# revert to decision:block. Mirrors a similar hook from another setup,
-# adapted to this repo's backend-agnostic second brain (org-roam <->
-# obsidian) and with no reference to a /wrapup-style command, which isn't
-# used here.
+# decision:block) -- an earlier predecessor hook used this same shape and
+# reliably produced immediate, visible action, with the CLI labeling it
+# "Stop hook feedback" instead of the alarming-looking "Stop hook error"
+# that decision:block renders as. Switched back to this shape 2026-07-23
+# specifically for the better label -- confirm empirically that it still
+# fires immediately; if it turns out to silently defer instead, revert to
+# decision:block. Mirrors a similar hook from another setup, adapted to
+# this repo's Obsidian-backed second brain, with no reference to a
+# /wrapup-style command, which isn't used here.
 N=25
 STATE_DIR="$HOME/.claude/state"
 mkdir -p "$STATE_DIR"
 
 CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
-BACKEND="${BACKEND:-org-roam}"
 
-if [ "$BACKEND" = "obsidian" ]; then
-  LOCATION="${OBSIDIAN_VAULT_DIR:-the Obsidian vault}"
-  CMD="/obsidian-note"
-else
-  LOCATION="${ORG_ROAM_DIR:-$HOME/Roam}"
-  CMD="/roam-note"
-fi
+LOCATION="${OBSIDIAN_VAULT_DIR:-the Obsidian vault}"
+CMD="/sb-note"
 
 INPUT="$(cat)"
 SID="$(printf '%s' "$INPUT" | jq -r '.session_id // "default"')"

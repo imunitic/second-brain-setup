@@ -19,9 +19,7 @@ common_setup() {
   export ORIGINAL_HOME_UNUSED=1 # documents that $HOME is intentionally swapped for the test
 
   cat > "$HOME/.claude/second-brain.conf" <<EOF
-BACKEND=obsidian
 OBSIDIAN_VAULT_DIR="$VAULT"
-ORG_ROAM_DIR="$TEST_HOME/roam"
 EOF
 }
 

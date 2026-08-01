@@ -84,23 +84,12 @@ run_hook() {
   [[ "$ctx" != *"Synapse namespace"* ]]
 }
 
-@test "org-roam backend: injects org index, never runs the synapse check" {
-  cat > "$HOME/.claude/second-brain.conf" <<EOF
-BACKEND=org-roam
-ORG_ROAM_DIR="$TEST_HOME/roam"
-OBSIDIAN_VAULT_DIR="$VAULT"
-EOF
-  mkdir -p "$TEST_HOME/roam"
-  cat > "$TEST_HOME/roam/index.org" <<'EOF'
-* Index
-Org test content.
+@test "no OBSIDIAN_VAULT_DIR configured: no output, synapse check skipped" {
+  cat > "$HOME/.claude/second-brain.conf" <<'EOF'
 EOF
   make_repo "git@github.com:example/repo.git"
-  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
 
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
-  ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  [[ "$ctx" == *"Org test content."* ]]
-  [[ "$ctx" != *"Synapse namespace"* ]]
+  [ -z "$output" ]
 }
