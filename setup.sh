@@ -12,7 +12,7 @@ DEST="$HOME/.claude"
 
 command -v jq >/dev/null || { echo "jq is required. Install it first (e.g. brew install jq)." >&2; exit 1; }
 
-mkdir -p "$DEST/hooks" "$DEST/commands" "$DEST/skills/sb-task" "$DEST/skills/synapse-node"
+mkdir -p "$DEST/hooks" "$DEST/commands" "$DEST/skills/sb-task" "$DEST/skills/synapse-node" "$DEST/bin"
 
 echo "== CLAUDE.md =="
 if [ -f "$DEST/CLAUDE.md" ] && ! diff -q "$SRC/CLAUDE.md" "$DEST/CLAUDE.md" >/dev/null 2>&1; then
@@ -45,6 +45,8 @@ chmod +x "$DEST/hooks/"*.sh
 cp "$SRC/commands/"*.md "$DEST/commands/"
 cp "$SRC/skills/sb-task/SKILL.md" "$DEST/skills/sb-task/SKILL.md"
 cp "$SRC/skills/synapse-node/SKILL.md" "$DEST/skills/synapse-node/SKILL.md"
+cp "$SRC/bin/synapse-tags.sh" "$DEST/bin/synapse-tags.sh"
+chmod +x "$DEST/bin/synapse-tags.sh"
 echo "  installed."
 if [ -d "$DEST/skills/obsidian-task" ] || [ -f "$DEST/bin/second-brain-switch" ] || ls "$DEST/commands/obsidian-"*.md >/dev/null 2>&1 || [ -d "$DEST/skills/org-task" ]; then
   echo "  NOTE: found stale files from before the sb- rename / org-roam removal --"

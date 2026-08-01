@@ -5,7 +5,7 @@ description: Tier 2 staleness check and lazy regeneration for a Synapse code-gra
 
 # Synapse Node Read: Staleness Check, Regeneration, Unassigned Sweep
 
-Design reference: [[sb — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
+Design reference: [[sb-001 — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
 implementation]]. Built by `/synapse-init`, kept flagged stale at edit time by the `PostToolUse`
 hook (`synapse-staleness.sh`, Tier 1). This skill is Tier 2 — the authoritative, lazy check that
 fires only when a node's content is actually about to be consumed, never on a schedule and never
@@ -33,7 +33,14 @@ needs one.
      (skip Regeneration and the sweep below — those only ride along when *some* regeneration
      event actually occurs, and a clean node isn't one).
 3. **Regeneration (only if step 2 found the node stale):**
-   - Re-read the node's current `sources` files from disk.
+   - For each of the node's current `sources` files, try `~/.claude/bin/synapse-tags.sh {path}`
+     first (see [[sb-002 — Synapse tree-sitter structural layer]] for exit-code handling — 0 means
+     use the tags directly, 1 means fall back to reading the file, 2 means run the discovery
+     procedure `/synapse-init` documents, then retry). This keeps the tag-derived structural signal
+     as fresh as the rest of the node, not just accurate at first init.
+   - Re-read the node's current `sources` files from disk (in full, regardless of what the tags
+     signal gave — that signal informs regrouping decisions, it never substitutes for actually
+     reading a file before rewriting its summary/crux prose).
    - Rewrite `## Summary`, `## Crux`, and `## Links` to match what the files actually contain now
      — same judgment `/synapse-init` used to write them the first time.
    - **Never touch `## Notes`** — freeform content there is preserved verbatim across every
@@ -50,7 +57,9 @@ needs one.
    - Read `synapse/{project}/_index.json`'s `_unassigned` array. Empty → nothing to do, skip
      silently (an empty sweep isn't worth announcing).
    - Otherwise read `synapse/{project}/Index.md` for the current node list (titles + summaries).
-   - For each unassigned path, read the file and classify it against that node list:
+   - For each unassigned path, try `~/.claude/bin/synapse-tags.sh {path}` first as a fast
+     pre-classification signal (same exit-code handling as Regeneration above), falling back to a
+     full read for ambiguous cases, then classify against that node list:
      - **Fits an existing node** → append it (path + fresh `git hash-object`) to that node's
        `sources`, and set *that* node's `stale: true` for its own next read — do not regenerate it
        immediately as part of this sweep, only the node that triggered step 3 gets regenerated

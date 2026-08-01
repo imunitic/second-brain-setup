@@ -42,6 +42,9 @@ hook_count() {
   [ -f "$HOME/.claude/skills/synapse-node/SKILL.md" ]
   [ -f "$HOME/.claude/skills/sb-task/SKILL.md" ]
 
+  [ -f "$HOME/.claude/bin/synapse-tags.sh" ]
+  [ -x "$HOME/.claude/bin/synapse-tags.sh" ]
+
   [ -f "$HOME/.claude/CLAUDE.md" ]
 }
 

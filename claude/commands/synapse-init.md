@@ -3,7 +3,7 @@
 Builds a repo's Synapse namespace in the second-brain vault — a small set of LLM-authored node
 notes (summary + crux + typed links per subsystem/concept) plus the two derived projections that
 keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo-name}/Index.md`). Design
-reference: [[sb — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
+reference: [[sb-001 — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
 implementation]].
 
 This is the **only** way a project gets a Synapse namespace in the first place — nothing else in
@@ -25,6 +25,14 @@ No arguments — always operates on the repo containing the current working dire
 - Must be run from inside a git repository. Synapse assumes git throughout (source hashing uses
   `git hash-object`, file enumeration uses `git ls-files`) — if `git rev-parse --show-toplevel`
   fails, stop and say this only works inside a git repo.
+- **Tree-sitter acceleration (optional, never blocking):** check once, up front, whether a C
+  compiler is available (`command -v cc`, falling back to `gcc`/`clang`). Missing → print one clear,
+  friendly note ("no C compiler found; Synapse will use its full-read behavior for this project, no
+  tree-sitter acceleration") and proceed with every step below exactly as if this section didn't
+  exist — never let a raw `cc`/build error surface later from inside a grammar build. This check
+  gates whether "Tree-sitter acceleration" below is attempted at all for this run; nothing else in
+  `/synapse-init` depends on its result. See [[sb-002 — Synapse tree-sitter structural layer]] for
+  the design.
 
 ## Resolving repo context
 
@@ -73,9 +81,39 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
    and should diverge from them if the files themselves disagree. No other project-specific doc
    convention (e.g. a `docs/design/` folder) gets this treatment — see the design note's
    Alternatives for why that was rejected.
-3. **Per-file summary pass:** for each enumerated file, read it and produce a short internal
-   summary of what it contains/does. This is scaffolding for clustering, not the node output
-   itself — don't write these anywhere.
+3. **Per-file summary pass:** for each enumerated file, first try `~/.claude/bin/synapse-tags.sh
+   {path}` (only if the C-compiler check above passed) — its def/ref output is often enough signal
+   for clustering on its own, cutting straight to step 4 for that file without a full read. Fall
+   back to actually reading the file (as before) whenever the script exits non-zero for a reason
+   *other* than "needs discovery" (see "Tree-sitter acceleration" below for that case), or whenever
+   the tags output alone isn't enough to judge what the file is for. Either way, produce a short
+   internal summary of what it contains/does — scaffolding for clustering, not the node output
+   itself, don't write these anywhere.
+
+   **Tree-sitter acceleration — handling `synapse-tags.sh`'s exit codes:**
+   - **Exit 0:** use the printed tags directly as clustering signal for this file.
+   - **Exit 1:** this language is a known dead end (or tree-sitter/a C compiler isn't available at
+     all) — fall back to a full read for this file, silently, no need to re-announce something
+     already covered by the up-front C-compiler check.
+   - **Exit 2 ("needs discovery" — this extension has never been seen before):** run this discovery
+     procedure once, then retry the script:
+     1. Try the naming convention first: `https://github.com/tree-sitter/tree-sitter-{lang}` (covers
+        most official grammars, e.g. OCaml) — a quick existence check, no reasoning needed if it
+        just resolves.
+     2. If that doesn't resolve, fall back to a web search for a community-maintained grammar for
+        the language.
+     3. Verify before trusting: whatever's found must actually ship a tags query (`queries/tags.scm`,
+        possibly at a subpath for a multi-grammar repo — `tree-sitter-ocaml` ships three sub-grammars
+        under `grammars/`, and the subpath specifically matters there) — a repo existing isn't
+        sufficient on its own.
+     4. Write the result back to `~/.claude/synapse-grammars.conf` (create it as `{}` first if it
+        doesn't exist) — a positive entry (`{"repo": "...", "scope": "..."}`) if verified,
+        `{"unsupported": true}` if nothing checks out. This is a permanent, cross-project cache
+        keyed by extension — every future project skips rediscovery for this language entirely.
+     5. Announce the outcome either way ("found/verified a grammar for `.rs`, cached" or "no usable
+        tree-sitter grammar for `.rs`, falling back to full reads"), then retry
+        `synapse-tags.sh {path}` now that the registry has an entry (falls back to a full read for
+        this file per the Exit 1 case above if discovery came up empty).
 4. **Cluster into nodes:** group the per-file summaries into a few dozen readable nodes, not one
    per file — same density Graft aims for. A node is a subsystem or concept, not a file; a file may
    legitimately belong to more than one node's `sources` when it's genuinely load-bearing for two
@@ -177,7 +215,10 @@ existing nodes.
 1. Read `synapse/{repo-name}/_index.json`'s `_unassigned` array. Empty → report "Nothing
    unassigned, nothing to do" and stop.
 2. Read `synapse/{repo-name}/Index.md` for the current node list (titles + summaries).
-3. For each unassigned path: read the file, classify it against the existing node list.
+3. For each unassigned path: try `~/.claude/bin/synapse-tags.sh {path}` first (same exit-code
+   handling as the first-time build's per-file pass above) as a fast pre-classification signal,
+   falling back to a full read for genuinely ambiguous cases. Classify against the existing node
+   list.
    - **Fits an existing node** → append it (path + fresh `git hash-object`) to that node's
      `sources` in frontmatter, and set that node's `stale: true` (it now covers a file it hasn't
      summarized yet — its own next read regenerates it, this step does not regenerate it

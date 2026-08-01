@@ -21,8 +21,8 @@ Obsidian Sync, iCloud, manual copy — your call).
 - `claude/skills/sb-task/` — proactive task-status tracking skill.
 - **Synapse** — a per-repo semantic code graph hosted in the vault under `synapse/{repo-name}/`,
   so Claude Code doesn't re-explore a codebase from scratch every session. Dormant until
-  `/synapse-init` is run in a repo. See [[sb — Synapse (Obsidian code-graph layer)]] in the vault
-  for the full design.
+  `/synapse-init` is run in a repo. See [[sb-001 — Synapse (Obsidian code-graph layer)]] in the
+  vault for the full design.
   - `claude/commands/synapse-init.md` — first-time build (per-file-summary-then-cluster pass into
     node notes + the two derived projections) and the manual `_unassigned`-sweep fallback for an
     already-initialized, otherwise-dormant repo.
@@ -31,6 +31,13 @@ Obsidian Sync, iCloud, manual copy — your call).
     API directly, no MCP round-trip.
   - `claude/skills/synapse-node/` — Tier 2: the lazy staleness check + regeneration + unassigned
     sweep Claude runs itself whenever a node's body is actually read, not a hook.
+  - `claude/bin/synapse-tags.sh` — optional tree-sitter acceleration for clustering/regeneration/the
+    `_unassigned` sweep: looks up a file's extension in a self-populating grammar registry
+    (`~/.claude/synapse-grammars.conf`), clones/builds a native grammar on first need, and prints
+    `tree-sitter tags` output (definitions + name-based call references). Fails soft on any missing
+    piece (`tree-sitter`, a C compiler, an unsupported/undiscovered language) — every caller falls
+    back to reading the file directly, exactly as if this script didn't exist. See
+    [[sb-002 — Synapse tree-sitter structural layer]] in the vault for the full design.
 
 ## What's NOT portable (per-machine, regenerated fresh each time)
 
@@ -92,12 +99,15 @@ bats tests/
 
 Covers `setup.sh` (idempotent install/merge into a scratch `$HOME`),
 `second-brain-session-start.sh` (index injection + the Synapse pointer
-check, pure git/filesystem, no network), and `synapse-staleness.sh`
+check, pure git/filesystem, no network), `synapse-staleness.sh`
 (Tier 1 staleness flagging, with `tests/fixtures/fake-bin/curl` stubbing
-out the Obsidian Local REST API so no real vault or plugin is needed).
-Every test runs against a throwaway `$HOME`/git repo/vault created in
-`tests/test_helper.bash` — nothing here touches your real `~/.claude` or
-vault.
+out the Obsidian Local REST API so no real vault or plugin is needed),
+and `synapse-tags.sh` (registry lookup, exit-code contract, and
+clone/registration idempotency, with `tests/fixtures/fake-bin/{tree-sitter,git}`
+stubbing out the real CLI and grammar cloning so no network access or
+tree-sitter install is needed). Every test runs against a throwaway
+`$HOME`/git repo/vault created in `tests/test_helper.bash` — nothing here
+touches your real `~/.claude` or vault.
 
 Not covered by these tests: `claude/commands/synapse-init.md` and
 `claude/skills/synapse-node/SKILL.md` are natural-language procedures
@@ -106,4 +116,6 @@ execute there.
 
 ## Dependencies
 
-`jq`, `bats-core` (tests only), the `claude` CLI.
+`jq`, `bats-core` (tests only), the `claude` CLI. Optional: `tree-sitter` CLI + a C compiler, for
+Synapse's tree-sitter acceleration (`synapse-tags.sh`) — everything degrades gracefully to full-read
+behavior if either is missing, so neither is a hard requirement.

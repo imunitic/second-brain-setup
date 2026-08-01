@@ -1,0 +1,21 @@
+#!/bin/bash
+# Fake `tree-sitter` standing in for the real CLI in tests, so
+# synapse-tags.sh's control flow (registry lookup -> clone -> register ->
+# invoke tags) can be asserted on without a real tree-sitter install or a
+# real grammar build. Logs every invocation to $FAKE_TS_LOG if set.
+set -euo pipefail
+
+[ -n "${FAKE_TS_LOG:-}" ] && printf '%s\n' "$*" >> "$FAKE_TS_LOG"
+
+case "${1:-}" in
+  init-config)
+    mkdir -p "$HOME/.config/tree-sitter"
+    printf '{}' > "$HOME/.config/tree-sitter/config.json"
+    ;;
+  tags)
+    printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
+    ;;
+  *)
+    exit 1
+    ;;
+esac
