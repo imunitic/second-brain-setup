@@ -44,7 +44,10 @@ needs one.
      — same judgment `/synapse-init` used to write them the first time.
    - **Never touch `## Notes`** — freeform content there is preserved verbatim across every
      regeneration, full stop.
-   - Recompute `git hash-object` for each source, update `sources` in frontmatter.
+   - Recompute `git hash-object` for each source, update `sources` in frontmatter, and rewrite
+     `## Sources` to match — a plain bullet list of the same paths, no hashes (the human-readable
+     mirror of frontmatter `sources`, since Obsidian's Properties panel flattens that list-of-objects
+     field into an unreadable truncated string).
    - Set `stale: false`, `built_at` to machine local time (`date '+%Y-%m-%d %H:%M'`, never
      inferred).
    - Write the updated node back (`mcp__obsidian__vault_write` or targeted `vault_patch` calls),

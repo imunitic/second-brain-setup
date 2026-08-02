@@ -129,9 +129,12 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
      someone through this subsystem), `crux` (the few lines that carry the actual logic, stored as
      *text*, not line numbers — line numbers drift, quoted text survives it), `links` (typed
      Obsidian wikilinks to other nodes in this same namespace: `depends_on`, `part_of`, `uses`, or
-     another type that fits better if one doesn't), and an empty `## Notes` section (freeform,
-     preserved verbatim across every future regeneration — never overwritten by the regen
-     procedure).
+     another type that fits better if one doesn't), a `## Sources` section (plain bullet list of
+     just the `sources` paths, no hashes — Obsidian's Properties panel flattens a list-of-objects
+     frontmatter field into a truncated, unreadable one-line string, so this is the human-readable
+     mirror of the same list; rewritten from frontmatter on every write, never hand-edited), and an
+     empty `## Notes` section (freeform, preserved verbatim across every future regeneration — never
+     overwritten by the regen procedure).
 
    ```yaml
    ---
@@ -160,6 +163,10 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
    ## Links
    - depends_on [[Other Node Title]]
    - part_of [[Another Node Title]]
+
+   ## Sources
+   - `eon_ecs/world.ml`
+   - `eon_ecs/world.mli`
 
    ## Notes
 
