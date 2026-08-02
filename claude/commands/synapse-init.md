@@ -2,9 +2,7 @@
 
 Builds a repo's Synapse namespace in the second-brain vault — a small set of LLM-authored node
 notes (summary + crux + typed links per subsystem/concept) plus the two derived projections that
-keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo-name}/Index.md`). Design
-reference: [[sb-001 — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
-implementation]].
+keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo-name}/Index.md`).
 
 This is the **only** way a project gets a Synapse namespace in the first place — nothing else in
 this system creates one unprompted, matching the "zero cost for projects that never opt in"
@@ -31,8 +29,7 @@ No arguments — always operates on the repo containing the current working dire
   tree-sitter acceleration") and proceed with every step below exactly as if this section didn't
   exist — never let a raw `cc`/build error surface later from inside a grammar build. This check
   gates whether "Tree-sitter acceleration" below is attempted at all for this run; nothing else in
-  `/synapse-init` depends on its result. See [[sb-002 — Synapse tree-sitter structural layer]] for
-  the design.
+  `/synapse-init` depends on its result.
 
 ## Resolving repo context
 
@@ -232,8 +229,7 @@ existing nodes.
 ## Confirm
 
 - **First-time build:** report the namespace path, node count, and a reminder that the
-  `SessionStart` hook will now pick this project up automatically (once the hook itself is wired —
-  see [[sb-001 — Synapse implementation]] if it isn't yet).
+  `SessionStart` hook will now pick this project up automatically.
 - **Re-run:** report how many unassigned files were resolved, how many remain, and to which nodes
   anything was attached.
 - **Namespace collision:** the refusal message from "Already initialized" above — nothing is

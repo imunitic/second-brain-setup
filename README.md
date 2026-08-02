@@ -21,8 +21,7 @@ Obsidian Sync, iCloud, manual copy — your call).
 - `claude/skills/sb-task/` — proactive task-status tracking skill.
 - **Synapse** — a per-repo semantic code graph hosted in the vault under `synapse/{repo-name}/`,
   so Claude Code doesn't re-explore a codebase from scratch every session. Dormant until
-  `/synapse-init` is run in a repo. See [[sb-001 — Synapse (Obsidian code-graph layer)]] in the
-  vault for the full design.
+  `/synapse-init` is run in a repo.
   - `claude/commands/synapse-init.md` — first-time build (per-file-summary-then-cluster pass into
     node notes + the two derived projections) and the manual `_unassigned`-sweep fallback for an
     already-initialized, otherwise-dormant repo.
@@ -36,8 +35,7 @@ Obsidian Sync, iCloud, manual copy — your call).
     (`~/.claude/synapse-grammars.conf`), clones/builds a native grammar on first need, and prints
     `tree-sitter tags` output (definitions + name-based call references). Fails soft on any missing
     piece (`tree-sitter`, a C compiler, an unsupported/undiscovered language) — every caller falls
-    back to reading the file directly, exactly as if this script didn't exist. See
-    [[sb-002 — Synapse tree-sitter structural layer]] in the vault for the full design.
+    back to reading the file directly, exactly as if this script didn't exist.
 
 ## What's NOT portable (per-machine, regenerated fresh each time)
 

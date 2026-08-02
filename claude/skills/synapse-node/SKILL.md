@@ -5,8 +5,7 @@ description: Tier 2 staleness check and lazy regeneration for a Synapse code-gra
 
 # Synapse Node Read: Staleness Check, Regeneration, Unassigned Sweep
 
-Design reference: [[sb-001 — Synapse (Obsidian code-graph layer)]], compiled as [[sb-001 — Synapse
-implementation]]. Built by `/synapse-init`, kept flagged stale at edit time by the `PostToolUse`
+Built by `/synapse-init`, kept flagged stale at edit time by the `PostToolUse`
 hook (`synapse-staleness.sh`, Tier 1). This skill is Tier 2 — the authoritative, lazy check that
 fires only when a node's content is actually about to be consumed, never on a schedule and never
 speculatively.
@@ -34,10 +33,10 @@ needs one.
      event actually occurs, and a clean node isn't one).
 3. **Regeneration (only if step 2 found the node stale):**
    - For each of the node's current `sources` files, try `~/.claude/bin/synapse-tags.sh {path}`
-     first (see [[sb-002 — Synapse tree-sitter structural layer]] for exit-code handling — 0 means
-     use the tags directly, 1 means fall back to reading the file, 2 means run the discovery
-     procedure `/synapse-init` documents, then retry). This keeps the tag-derived structural signal
-     as fresh as the rest of the node, not just accurate at first init.
+     first (exit 0 means use the tags directly, exit 1 means fall back to reading the file, exit 2
+     means run the discovery procedure `/synapse-init` documents, then retry). This keeps the
+     tag-derived structural signal as fresh as the rest of the node, not just accurate at first
+     init.
    - Re-read the node's current `sources` files from disk (in full, regardless of what the tags
      signal gave — that signal informs regrouping decisions, it never substitutes for actually
      reading a file before rewriting its summary/crux prose).

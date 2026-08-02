@@ -1,0 +1,76 @@
+# The Second Brain
+
+A permanent, curated knowledge base — an Obsidian vault — that persists across every project and
+every session, separate from (and complementary to) Claude Code's own `~/.claude` auto-memory
+system. Auto-memory is for *how to work with this user*; the second brain is for durable,
+browsable notes about the work itself.
+
+![Second brain overview](diagrams/second-brain-overview.png)
+
+## The vault
+
+A regular Obsidian vault, running headless at login with the **Local REST API** plugin installed.
+That plugin is the only valid way anything here talks to the vault — hooks call it directly over
+HTTP (they're plain scripts, not agent turns), and Claude Code talks to it through the `obsidian`
+MCP server, which just wraps the same API. Nothing here assumes a fixed vault path; the API always
+targets whichever vault the running Obsidian instance currently has open.
+
+`~/.claude/second-brain.conf` holds the one piece of genuinely machine-local state:
+`OBSIDIAN_VAULT_DIR`, used only as a fallback for grepping the vault as plain files if the MCP
+tools are ever unreachable.
+
+## Folder layout
+
+Every note lands in one of these, chosen by what kind of thing it is, not what project it's about:
+
+| Folder | What goes there |
+|---|---|
+| `projects/` | Dev-log notes and compiled task notes tied to a specific coding project |
+| `research/` | Standalone research/reading notes, not tied to one project's dev log |
+| `scratchpad/` | Throwaway or in-progress notes, not yet worth filing anywhere else |
+| `inbox/` | Doesn't cleanly fit the others — reviewed periodically, meant to stay small |
+| `designs/` | Cross-project design discussions (see [design-task-workflow.md](design-task-workflow.md)) |
+| `synapse/` | Per-repo code-graph namespaces (see [synapse.md](synapse.md)) |
+
+Folder depth is capped at two levels. A new top-level folder requires adding a matching section to
+the vault's own `Index.md` in the same action — the index is agent-maintained and must never fall
+behind what's actually on disk.
+
+## Filenames and frontmatter
+
+Filenames are the human-readable title itself — no timestamp prefix, no slug — since Obsidian's
+sidebar and graph view show the filename directly. Frontmatter carries what the filename doesn't:
+`title`, `created`, and for task notes `task_id`/`status`.
+
+## The three hooks
+
+Nothing here runs on a schedule; everything is triggered by an actual session event.
+
+**`SessionStart` → `second-brain-session-start.sh`**
+Injects the vault's top-level `Index.md` into context at the start of every session, so its
+contents are live information from turn one rather than something Claude has to remember to go
+read. Also does one extra cheap check: resolves the current repo (if any) and looks for a matching
+Synapse namespace, appending a single pointer line if one exists and its `remote` field actually
+matches this repo — see [synapse.md](synapse.md) for what that namespace is.
+
+**`Stop` → `second-brain-stop-nudge.sh`**
+A turn-count-based nudge, firing every 25 turns, asking: *did anything in this stretch belong in
+the second brain and not get written down?* This exists because "remember to write notes" is
+exactly the shape of standing instruction that's easy to silently forget under task pressure — a
+periodic, mechanical prompt is more reliable than trusting recall alone.
+
+**`PostToolUse` → `second-brain-db-sync.sh`**
+Fires on every vault-modifying MCP call (`vault_write`/`patch`/`append`/`delete`/`move`) and, if
+the vault itself is a git repo, commits the change immediately. This is what makes the vault's own
+history a usable audit trail of every note ever written or edited, without anyone having to
+remember to commit it themselves.
+
+## The standing instruction
+
+The behavioral half of this system lives in `claude/CLAUDE.md`, installed to `~/.claude/CLAUDE.md`
+— not a hook, but a persistent instruction Claude Code loads every session. Its core claim: this is
+a *primary* memory system, not an optional nicety, and specific triggers (a non-trivial bug fixed,
+a stated preference or decision, a milestone, research worth not redoing, a note gone stale)
+obligate writing or updating a note without waiting to be asked. Linking to existing related notes
+is called out as the highest-priority step — before creating anything new, search first — and a
+note that's outgrowing its own scope should be split rather than left to sprawl.
