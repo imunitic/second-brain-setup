@@ -10,6 +10,32 @@ load 'test_helper'
 
 HOOK="$REPO_ROOT/claude/hooks/synapse-staleness.sh"
 
+# Writes a Synapse node whose frontmatter contains every shape the old
+# `PATCH -H "Target-Type: frontmatter"` call used to mangle: a title long
+# enough to be line-folded, quoted values, and an all-digit `hash` that
+# YAML happily coerces to a float.
+write_synapse_node() {
+  local project="$1" node="$2" stale="${3:-false}"
+  mkdir -p "$VAULT/synapse/$project"
+  cat > "$VAULT/synapse/$project/$node" <<EOF
+---
+title: "A deliberately long node title that a re-serialising writer would fold across two lines"
+node_type: synapse-node
+project: $project
+sources:
+  - path: src/foo.ml
+    hash: 1111111111111111111111111111111111111111
+sources_digest: "2222222222222222222222222222222222222222222222222222222222222222"
+stale: $stale
+built_at: "2026-08-03 16:15"
+---
+
+# A node
+
+Body text, including a decoy: stale: false
+EOF
+}
+
 setup() {
   common_setup
   setup_fake_obsidian_plugin
@@ -32,12 +58,14 @@ run_staleness_hook() {
     FAKE_CURL_LOG="$CURL_LOG" \
     FAKE_CURL_CAPTURE_DIR="$CURL_CAPTURE" \
     FAKE_CURL_INDEX_BODY="$index_body" \
+    FAKE_CURL_VAULT_DIR="$VAULT" \
     bash -c "printf '%s' \"\$1\" | jq -Rn '{tool_input:{file_path: input}}' | bash \"\$0\"" "$HOOK" "$file"
 }
 
-@test "file mapped to a node: PATCHes that node's stale field, no PUT" {
+@test "file mapped to a node: rewrites that node's stale line, never PATCHes frontmatter" {
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
 
   cat > "$TEST_HOME/index-body.json" <<'EOF'
 {
@@ -49,16 +77,19 @@ EOF
   run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
 
-  [ -f "$CURL_CAPTURE/patches.log" ]
-  grep -q "synapse/$(repo_name)/Foo%20Node.md" "$CURL_CAPTURE/patches.log"
-  grep -q -- "-X PATCH" "$CURL_LOG"
-  grep -q "Target: stale" "$CURL_LOG"
+  grep -q "synapse/$(repo_name)/Foo Node.md" "$CURL_CAPTURE/node-puts.log"
+  grep -q "stale: true" "$VAULT/synapse/$(repo_name)/Foo Node.md"
+  # The frontmatter-patch call is the bug being fixed -- it must never reappear.
+  [ ! -f "$CURL_CAPTURE/patches.log" ]
+  ! grep -q "Target-Type: frontmatter" "$CURL_LOG"
   [ ! -f "$CURL_CAPTURE/index-put.json" ]
 }
 
-@test "file mapped to two nodes: PATCHes both" {
+@test "file mapped to two nodes: flags both" {
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
+  write_synapse_node "$(repo_name)" "Bar Node.md" false
 
   cat > "$TEST_HOME/index-body.json" <<'EOF'
 {
@@ -70,9 +101,9 @@ EOF
   run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
 
-  grep -q "synapse/$(repo_name)/Foo%20Node.md" "$CURL_CAPTURE/patches.log"
-  grep -q "synapse/$(repo_name)/Bar%20Node.md" "$CURL_CAPTURE/patches.log"
-  [ "$(wc -l < "$CURL_CAPTURE/patches.log" | tr -d ' ')" = "2" ]
+  grep -q "stale: true" "$VAULT/synapse/$(repo_name)/Foo Node.md"
+  grep -q "stale: true" "$VAULT/synapse/$(repo_name)/Bar Node.md"
+  [ "$(wc -l < "$CURL_CAPTURE/node-puts.log" | tr -d ' ')" = "2" ]
 }
 
 @test "new file not in any node's sources: queued into _unassigned via PUT, no PATCH" {
@@ -136,9 +167,10 @@ EOF
   [ ! -s "$CURL_LOG" ]
 }
 
-@test "node title with special characters is percent-encoded correctly in the PATCH URL" {
+@test "node title with special characters is percent-encoded correctly in the request URL" {
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "World — entity_component_resource core.md" false
 
   cat > "$TEST_HOME/index-body.json" <<'EOF'
 {
@@ -149,5 +181,72 @@ EOF
 
   run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
-  grep -q "World%20%E2%80%94%20entity_component_resource%20core.md" "$CURL_CAPTURE/patches.log"
+  grep -q "World%20%E2%80%94%20entity_component_resource%20core.md" "$CURL_LOG"
+  grep -q "stale: true" "$VAULT/synapse/$(repo_name)/World — entity_component_resource core.md"
+}
+
+@test "flagging a node leaves every byte outside the stale line untouched" {
+  # Regression test for the frontmatter-corruption bug. The old
+  # `PATCH -H "Target-Type: frontmatter" -H "Target: stale"` call was not
+  # field-local: it re-serialised the whole YAML block, stripping quotes from
+  # every value, folding long `title:` lines in two, and YAML-coercing an
+  # all-digit `hash` into scientific notation (verified 2026-08-03:
+  # 1111111111111111111111111111111111111111 -> 1.1111111111111112e+39).
+  # A corrupted hash makes sources_digest disagree with its own sources
+  # permanently, so verification would report the node stale forever.
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
+
+  local node="$VAULT/synapse/$(repo_name)/Foo Node.md"
+  cp "$node" "$TEST_HOME/before.md"
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Foo Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+
+  # Exactly one line differs, and it is the stale line.
+  run diff "$TEST_HOME/before.md" "$node"
+  [ "$status" -eq 1 ]
+  [ "$(diff "$TEST_HOME/before.md" "$node" | grep -c '^[<>]')" = "2" ]
+  diff "$TEST_HOME/before.md" "$node" | grep -q '^< stale: false$'
+  diff "$TEST_HOME/before.md" "$node" | grep -q '^> stale: true$'
+
+  # The specific values the old call destroyed.
+  grep -q 'hash: 1111111111111111111111111111111111111111' "$node"
+  grep -q '^title: "A deliberately long node title' "$node"
+  grep -q '^built_at: "2026-08-03 16:15"$' "$node"
+  grep -q 'decoy: stale: false' "$node"
+}
+
+@test "node already stale: no write at all" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "Foo Node.md" true
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Foo Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  # Already true -> the hook must skip the PUT rather than churn the file.
+  [ ! -f "$CURL_CAPTURE/node-puts.log" ]
+}
+
+@test "node listed in _index.json but missing from the vault: no-op, no crash" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  # deliberately no write_synapse_node -- fake curl's GET -o exits 22
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Ghost Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [ ! -f "$CURL_CAPTURE/node-puts.log" ]
 }

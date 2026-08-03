@@ -91,15 +91,50 @@ if [ -z "$NODES" ]; then
   exit 0
 fi
 
+# Flag each owning node stale by read-modify-write, NOT by
+# `PATCH -H "Target-Type: frontmatter"`. That call is not field-local: it
+# re-serialises the entire YAML block, stripping quotes from every value,
+# folding long `title:` lines across two lines, and YAML-coercing anything
+# that looks like another type. Verified 2026-08-03 on a node-shaped fixture:
+# an all-digit `hash` became `1.1111111111111112e+39`, unrecoverably. Since a
+# corrupted hash makes `sources_digest` disagree with its own `sources`
+# forever, that would be a permanent false-positive no rebuild can clear.
+#
+# Rewriting only the one `stale:` line inside the frontmatter leaves every
+# other byte -- including the exhaustive `sources` list -- untouched.
+set_stale_true() {
+  awk '
+    NR == 1 && $0 == "---" { in_fm = 1; print; next }
+    in_fm && $0 == "---" {
+      if (!done) { print "stale: true"; done = 1 }
+      in_fm = 0; print; next
+    }
+    in_fm && !done && /^stale:[[:space:]]*/ { print "stale: true"; done = 1; next }
+    { print }
+  ' "$1"
+}
+
 while IFS= read -r node; do
   [ -n "$node" ] || continue
   NODE_URL="$BASE/vault/$(urlencode_path "synapse/$REPO_NAME/$node")"
+
+  ORIG="$(mktemp)"; NEXT="$(mktemp)"
+  if ! curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
+        -H "Accept: text/markdown" -o "$ORIG" "$NODE_URL"; then
+    rm -f "$ORIG" "$NEXT"
+    continue
+  fi
+
+  set_stale_true "$ORIG" > "$NEXT"
+
+  # Already stale (or no frontmatter to touch) -- skip the write entirely
+  # rather than churn the file's mtime on every edit.
+  if cmp -s "$ORIG" "$NEXT"; then
+    rm -f "$ORIG" "$NEXT"
+    continue
+  fi
+
   curl -s -o /dev/null --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
-    -X PATCH \
-    -H "Operation: replace" \
-    -H "Target-Type: frontmatter" \
-    -H "Target: stale" \
-    -H "Content-Type: application/json" \
-    --data-raw "true" \
-    "$NODE_URL"
+    -X PUT -H "Content-Type: text/markdown" --data-binary "@$NEXT" "$NODE_URL"
+  rm -f "$ORIG" "$NEXT"
 done <<< "$NODES"

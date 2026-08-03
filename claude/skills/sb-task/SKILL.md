@@ -54,9 +54,22 @@ into `status:` either — always go through this skill, which caps at
    `REVIEW` if all checked.
 4. Fetch machine local time: `date '+%Y-%m-%d %H:%M'` — never use inferred
    time.
-5. Update `status:` and `last_updated:` in frontmatter with
-   `mcp__obsidian__vault_patch` (`targetType: frontmatter`, `operation:
-   replace`) — one call per field, confirmed safe (only touches that key).
+5. Update `status:` and `last_updated:` by **read-modify-write**, not by
+   patching frontmatter: `vault_read` the file, replace the one `status:` /
+   `last_updated:` line in the returned content, `vault_write` the whole
+   file back. Same mechanism step 2 below already uses for checklist items,
+   and byte-preserving because you write back what you read.
+
+   **Do not use `vault_patch` with `targetType: frontmatter`.** It is *not*
+   field-local, despite reading that way. Verified 2026-08-03: two patches
+   (one for `status`, one for `last_updated`) re-serialised the entire
+   frontmatter block — every quoted value lost its quotes (`created:
+   "2026-08-03 15:57"` → `created: 2026-08-03 15:57`) and a long `title:`
+   was folded across two lines. Both are valid YAML, so nothing breaks
+   loudly, but any tool string-matching `^title: "` stops matching, and
+   every status transition silently reformats the note. Since transitions
+   are this skill's main job, that reformatting would land on every task
+   note in the vault.
 6. **For completion only:** append implementation bullets to the existing
    `## Notes` section with `mcp__obsidian__vault_patch`
    (`targetType: heading`, `target: "{H1 title}::Notes"`, `operation:

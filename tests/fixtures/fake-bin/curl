@@ -5,14 +5,27 @@
 #
 # Logs every invocation verbatim to $FAKE_CURL_LOG, and simulates just
 # enough of the Local REST API's /vault/{path} behavior for the hook:
-#   GET   -> body + "\n<code>" (matching the real curl -w '\n%{http_code}' the
-#            hook uses): $FAKE_CURL_INDEX_BODY's contents + 200 if set and
-#            present, else the real API's actual 404 JSON error body + 404 --
-#            NOT an empty body, since that 404 body is itself valid JSON and a
-#            bare `jq -e .` check can't tell it apart from a real index (this
-#            is exactly the bug the hook's HTTP-status check now guards against).
-#   PUT   -> writes the --data-binary payload to $FAKE_CURL_CAPTURE_DIR/index-put.json
-#   PATCH -> appends the request URL to $FAKE_CURL_CAPTURE_DIR/patches.log
+#
+#   GET without -o  -> body + "\n<code>" (matching the real curl -w '\n%{http_code}'
+#            the hook uses for _index.json): $FAKE_CURL_INDEX_BODY's contents + 200
+#            if set and present, else the real API's actual 404 JSON error body +
+#            404 -- NOT an empty body, since that 404 body is itself valid JSON and
+#            a bare `jq -e .` check can't tell it apart from a real index (exactly
+#            the bug the hook's HTTP-status check guards against).
+#   GET with -o FILE -> node fetch. Serves $FAKE_CURL_VAULT_DIR/<percent-decoded
+#            path> into FILE, or exits 22 (curl's -f "HTTP error" code) when the
+#            file doesn't exist, so the hook's `|| continue` path is exercised.
+#   PUT   -> writes the payload (inline, or read from a file for --data-binary
+#            @path) to $FAKE_CURL_VAULT_DIR/<decoded path> when that dir is set,
+#            so tests can diff the resulting bytes. _index.json PUTs are also
+#            captured to $FAKE_CURL_CAPTURE_DIR/index-put.json, node PUTs logged
+#            to $FAKE_CURL_CAPTURE_DIR/node-puts.log. Payload files are copied,
+#            never round-tripped through a shell variable, so a trailing newline
+#            survives and byte-identity assertions mean something.
+#   PATCH -> appends the request URL to $FAKE_CURL_CAPTURE_DIR/patches.log. The
+#            hook no longer issues these against node frontmatter (that call
+#            re-serialises the whole YAML block and YAML-coerces values); a
+#            patches.log appearing in a staleness test is now a regression.
 set -euo pipefail
 
 : "${FAKE_CURL_LOG:?FAKE_CURL_LOG must be set}"
@@ -24,15 +37,46 @@ url="${args[$((n-1))]}"
 
 method="GET"
 data=""
+outfile=""
 for ((i = 0; i < n; i++)); do
   case "${args[$i]}" in
     -X) method="${args[$((i+1))]}" ;;
     --data-binary|--data-raw) data="${args[$((i+1))]}" ;;
+    -o) outfile="${args[$((i+1))]}" ;;
   esac
 done
 
+# Percent-decode the part after /vault/ -- node titles carry spaces and em
+# dashes, which the hook URL-encodes before calling.
+vault_path=""
+case "$url" in
+  */vault/*)
+    enc="${url#*/vault/}"
+    vault_path="$(printf '%b' "${enc//%/\\x}")"
+    ;;
+esac
+
+# Writes $data (inline, or read from a file for @path) to $1, byte-exact.
+write_payload_to() {
+  local dest="$1"
+  mkdir -p "$(dirname "$dest")"
+  case "$data" in
+    @*) cp "${data#@}" "$dest" ;;
+    *) printf '%s' "$data" > "$dest" ;;
+  esac
+}
+
 case "$method" in
   GET)
+    if [ -n "$outfile" ]; then
+      # Node fetch, for the read-modify-write of a single `stale:` line.
+      src="${FAKE_CURL_VAULT_DIR:-}/$vault_path"
+      if [ -n "${FAKE_CURL_VAULT_DIR:-}" ] && [ -f "$src" ]; then
+        cp "$src" "$outfile"
+        exit 0
+      fi
+      exit 22
+    fi
     if [ -n "${FAKE_CURL_INDEX_BODY:-}" ] && [ -f "$FAKE_CURL_INDEX_BODY" ]; then
       cat "$FAKE_CURL_INDEX_BODY"
       printf '\n200'
@@ -41,9 +85,22 @@ case "$method" in
     fi
     ;;
   PUT)
-    [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ] || exit 0
-    mkdir -p "$FAKE_CURL_CAPTURE_DIR"
-    printf '%s' "$data" > "$FAKE_CURL_CAPTURE_DIR/index-put.json"
+    case "$vault_path" in
+      *_index.json)
+        if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
+          write_payload_to "$FAKE_CURL_CAPTURE_DIR/index-put.json"
+        fi
+        ;;
+      *)
+        if [ -n "${FAKE_CURL_VAULT_DIR:-}" ]; then
+          write_payload_to "$FAKE_CURL_VAULT_DIR/$vault_path"
+        fi
+        if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
+          mkdir -p "$FAKE_CURL_CAPTURE_DIR"
+          printf '%s\n' "$vault_path" >> "$FAKE_CURL_CAPTURE_DIR/node-puts.log"
+        fi
+        ;;
+    esac
     ;;
   PATCH)
     [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ] || exit 0
