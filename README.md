@@ -30,6 +30,11 @@ Obsidian Sync, iCloud, manual copy — your call).
     API directly, no MCP round-trip.
   - `claude/skills/synapse-node/` — Tier 2: the lazy staleness check + regeneration + unassigned
     sweep Claude runs itself whenever a node's body is actually read, not a hook.
+  - `claude/bin/synapse-verify.sh` — the Tier 2 check itself: verifies a whole project in one pass
+    (one `git hash-object` fork plus one GET per node) by comparing each node's `sources_digest`
+    against a recomputed one, and prints only the stale node titles with a reason. A script rather
+    than a procedure because recomputing a digest needs the node's path list, and reading that into
+    context costs ~38k tokens for a hub node (or ~350k for `_index.json`).
   - `claude/bin/synapse-tags.sh` — optional tree-sitter acceleration for clustering/regeneration/the
     `_unassigned` sweep: looks up a file's extension in a self-populating grammar registry
     (`~/.claude/synapse-grammars.conf`), clones/builds a native grammar on first need, and prints

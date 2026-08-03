@@ -138,20 +138,39 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
 
    - **Filename/title:** short, senior-engineer-style description of the concept (e.g. "World —
      entity/component/resource core"). Sanitize filesystem-illegal characters (`/ : * ? " < > |`).
-   - **`sources`:** repo-relative paths plus each file's `git hash-object <path>` output, run from
-     the repo root, at the moment of writing.
+   - **`sources`:** **every** file the node covers — repo-relative path plus that file's
+     `git hash-object <path>` output, run from the repo root at the moment of writing. Exhaustive,
+     not a sample: this is a **machine** field, and it is what makes Obsidian's search able to reach
+     a node from any file it covers (searching a class name that appears in no node's prose still
+     finds its node via this list). Do **not** trim it to a handful of "representative" files —
+     doing so silently destroys that lookup, leaves the node unable to answer "which files am I
+     about", and reduces hash verification to whatever survived the trim. Readability pressure
+     belongs on `## Sources` below, never here.
+   - **`sources_digest`:** `sha256` over the sorted `path:hash` lines of `sources` (see "Computing
+     `sources_digest`" below). Lets a staleness check answer "has this node changed" by reading one
+     field instead of every hash.
    - **`built_at`:** machine local time (`date '+%Y-%m-%d %H:%M'`) — never inferred.
    - **`stale`:** `false` — freshly built.
    - **Body:** `summary` (plain-English, the explanation a senior engineer would give walking
      someone through this subsystem), `crux` (the few lines that carry the actual logic, stored as
      *text*, not line numbers — line numbers drift, quoted text survives it), `links` (typed
      Obsidian wikilinks to other nodes in this same namespace: `depends_on`, `part_of`, `uses`, or
-     another type that fits better if one doesn't), a `## Sources` section (plain bullet list of
-     just the `sources` paths, no hashes — Obsidian's Properties panel flattens a list-of-objects
-     frontmatter field into a truncated, unreadable one-line string, so this is the human-readable
-     mirror of the same list; rewritten from frontmatter on every write, never hand-edited), and an
-     empty `## Notes` section (freeform, preserved verbatim across every future regeneration — never
-     overwritten by the regen procedure).
+     another type that fits better if one doesn't), a `## Sources` section, and an empty `## Notes`
+     section.
+   - **`## Sources` is the human mirror of `sources`, aggregated rather than enumerated:** one line
+     per owning directory or module with a file count, `LC_ALL=C` sorted. A node covering 941 files
+     would otherwise put 75 KB of paths in front of a reader who wants to know which modules are
+     involved — and the frontmatter already carries every path for search, so the mirror doesn't
+     need to repeat them. Rewritten from `sources` on every write, never hand-edited. (Obsidian's
+     Properties panel flattens the raw `sources` field into a truncated one-line string, which is
+     why a mirror exists at all — but that is an argument for aggregating *the mirror*, not for
+     trimming the field.)
+   - **`## Notes` is human-authored only.** Claude never writes into it — not at build time, not at
+     regeneration. It is created empty and preserved verbatim forever after.
+   - **Fence the generated region.** Everything the generator owns sits between
+     `<!-- synapse:generated:start -->` and `<!-- synapse:generated:end -->`; everything outside is
+     re-emitted byte-for-byte. This is the mechanism behind the `## Notes` guarantee — without it,
+     "preserved verbatim" is a promise with nothing enforcing it.
 
    ```yaml
    ---
@@ -163,11 +182,14 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
        hash: <git hash-object output>
      - path: eon_ecs/world.mli
        hash: <git hash-object output>
+     # ... every file the node covers, not a selection
+   sources_digest: <sha256 over the sorted "path:hash" lines>
    stale: false
    built_at: "<now>"
    ---
 
    # World — entity/component/resource core
+   <!-- synapse:generated:start -->
 
    ## Summary
    {plain-English explanation}
@@ -182,12 +204,25 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
    - part_of [[Another Node Title]]
 
    ## Sources
-   - `eon_ecs/world.ml`
-   - `eon_ecs/world.mli`
+   - `eon_ecs` (2)
+   <!-- synapse:generated:end -->
 
    ## Notes
 
    ```
+
+   ### Computing `sources_digest`
+
+   Pin this exactly — a writer and a verifier computing it differently is a silent
+   false-positive generator, and the point of the field is to be trusted without reading
+   `sources` at all. Adopted from Graft's `sources_digest` so the two remain comparable:
+
+   ```
+   digest = sha256( "\n".join(sorted( f"{path}:{hash}" for each entry in sources )) )
+   ```
+
+   Sort the joined `path:hash` lines themselves (not the paths, then the hashes), `LC_ALL=C`,
+   newline-separated, no trailing newline.
 
    `project` is the repo name resolved above, not the task-prefix scheme.
 

@@ -45,8 +45,10 @@ chmod +x "$DEST/hooks/"*.sh
 cp "$SRC/commands/"*.md "$DEST/commands/"
 cp "$SRC/skills/sb-task/SKILL.md" "$DEST/skills/sb-task/SKILL.md"
 cp "$SRC/skills/synapse-node/SKILL.md" "$DEST/skills/synapse-node/SKILL.md"
-cp "$SRC/bin/synapse-tags.sh" "$DEST/bin/synapse-tags.sh"
-chmod +x "$DEST/bin/synapse-tags.sh"
+# Glob rather than naming each script, matching how hooks/ is copied above --
+# naming them individually meant a newly added script silently didn't install.
+cp "$SRC/bin/"*.sh "$DEST/bin/"
+chmod +x "$DEST/bin/"*.sh
 echo "  installed."
 if [ -d "$DEST/skills/obsidian-task" ] || [ -f "$DEST/bin/second-brain-switch" ] || ls "$DEST/commands/obsidian-"*.md >/dev/null 2>&1 || [ -d "$DEST/skills/org-task" ]; then
   echo "  NOTE: found stale files from before the sb- rename / org-roam removal --"

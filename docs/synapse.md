@@ -24,11 +24,13 @@ per-file-summary-then-clustering pass biased by `CLAUDE.md`/`README.md` if prese
 authoritative structure), and writes:
 
 - One node file per subsystem/concept — a few dozen per repo, not one per file — under
-  `synapse/{repo-name}/{Node Title}.md`. Each carries `sources` (repo-relative paths + a
-  `git hash-object` fingerprint per file), a plain-English `summary`, a `crux` (the few lines that
-  carry the actual logic, stored as quoted text so it survives line drift, not line numbers),
-  typed `links` to other nodes, and a `## Notes` section preserved verbatim across every future
-  regeneration.
+  `synapse/{repo-name}/{Node Title}.md`. Each carries `sources` (**every** file the node covers, as
+  a repo-relative path + `git hash-object` fingerprint), `sources_digest` (sha256 over the `LC_ALL=C`
+  sorted `path:hash` lines, so "has this node changed" is one comparison rather than N), a
+  plain-English `summary`, a `crux` (the few lines that carry the actual logic, stored as quoted text
+  so it survives line drift, not line numbers), typed `links` to other nodes, an aggregated
+  `## Sources` mirror, and a `## Notes` section preserved verbatim across every future regeneration.
+
 - `_index.json` — a derived, machine-only reverse index (source path → owning node filenames, plus
   an `_unassigned` bucket for anything not yet claimed) that the cheap staleness hook can look up
   directly, without reasoning about anything.
@@ -40,24 +42,62 @@ Re-running it on an already-initialized project doesn't rebuild anything — it'
 fallback for sweeping the `_unassigned` bucket, for a repo that's gone fully dormant with no other
 regeneration event to piggyback the sweep onto.
 
+### `sources` is a machine field; `## Sources` is its human mirror
+
+Worth stating plainly, because conflating the two produced a real bug (fw-core's first build trimmed
+`sources` to ~5 "representative" files per node to keep the frontmatter readable):
+
+- **`sources` is exhaustive, and read by machines only.** It is what Obsidian's search index turns
+  into a file → node lookup: searching a class name that appears in no node's prose still finds the
+  owning node, because the path is in that list. Trimming it silently destroys that lookup, leaves a
+  node unable to answer "which files am I about", and reduces verification to whatever survived the
+  trim. Its unreadability in Obsidian's Properties panel is not a reason to trim it — that is what
+  the mirror is for.
+- **`## Sources` is aggregated, not enumerated**: one line per owning directory/module with a file
+  count. A node covering 941 files would otherwise put 75 KB of paths in front of a reader who wants
+  to know which modules are involved.
+- **`## Notes` is human-authored only.** Claude never writes there, at build or regeneration.
+- Everything the generator owns sits between `<!-- synapse:generated:start -->` and
+  `<!-- synapse:generated:end -->`. Regeneration replaces only the bytes between those markers and
+  re-emits everything outside verbatim — which is the mechanism behind the `## Notes` guarantee.
+  Without a fence, "preserved verbatim" is a promise with nothing enforcing it.
+
 ## Two-tier staleness
 
 **Tier 1 — `PostToolUse` → `synapse-staleness.sh`.** Fires on every `Write`/`Edit`/`MultiEdit`.
-Resolves the repo root and looks the edited path up in that repo's `_index.json`: if it belongs to
-one or more nodes, PATCHes each one's `stale` frontmatter field to `true`; if it's not in the index
-at all, appends it to `_unassigned` instead. No hashing here — the hook already knows with
-certainty which file just changed, so this tier is pure bookkeeping, not verification.
+Resolves the repo root **from the edited file's own directory**, not the session's cwd, so a session
+spanning several repos flags the right namespace in each. Looks the edited path up in that repo's
+`_index.json`: if it belongs to one or more nodes, rewrites each one's `stale:` line to `true`; if
+it's not in the index at all, appends it to `_unassigned` instead. No hashing here — the hook already
+knows with certainty which file just changed, so this tier is pure bookkeeping, not verification.
+
+It sets that field by **read-modify-write** (`GET`, rewrite the one `stale:` line, `PUT`), never by
+`PATCH` with `Target-Type: frontmatter`. That call is not field-local despite reading that way: it
+re-serialises the whole YAML block, stripping quotes, folding long `title:` lines, and YAML-coercing
+values by type inference — verified, an all-digit `hash` came back as `1.1111111111111112e+39`. A
+corrupted hash makes `sources_digest` disagree with its own `sources` permanently, so that would be a
+false positive no rebuild can clear.
 
 **Tier 2 — read-time, the `synapse-node` skill.** Not a hook — a procedure Claude follows itself,
-proactively, whenever a node's body is about to actually be used (not a title-only skim). If
-`stale` is already `true`, skip straight to regeneration. Otherwise, run `git hash-object` on each
-of the node's `sources` and compare to the stored hash — a single mismatch (including the file
-having been renamed or deleted) counts the same as `stale: true`. This is the tier that catches
-everything Tier 1 can't see by construction: edits made outside a Claude Code session, `git pull`,
-branch switches.
+proactively, whenever a node's body is about to actually be used (not a title-only skim). It runs
+`claude/bin/synapse-verify.sh`, which verifies the **whole project in one pass** — one
+`git hash-object` fork plus one GET per node, ~1.5s for 51 nodes — and prints one line per stale node
+with a reason (content changed, source files gone by name, no digest, node file missing), or nothing
+at all when everything is current. Its exit 1 means "could not verify", not "clean".
 
-Regeneration re-reads the node's current sources, rewrites `summary`/`crux`/`links` (never
-`## Notes`), recomputes hashes, and is always announced out loud — it has real latency/token cost,
+This is deliberately a script rather than something Claude does by hand: recomputing a digest needs
+the node's path list, and both places it lives are ruinous to read into context — a hub node's own
+`sources` runs to ~38k tokens and `_index.json` to ~350k. Done in a script, the only thing reaching a
+context window is the list of stale titles. Tier 2 is what catches everything Tier 1 can't see by
+construction: edits made outside a Claude Code session, `git pull`, branch switches.
+
+**Reading a node never reads its frontmatter.** Consultation wants the prose, not the path list, so
+the procedure finds the closing `---` and reads from the line after it — ~900 tokens whether the node
+covers 5 files or 941. A full `vault_read` of a hub node is a mistake, not merely expensive.
+
+Regeneration re-reads the node's current sources, rewrites `summary`/`crux`/`links` and the
+aggregated `## Sources` mirror (never `## Notes`, and only inside the generated fence), recomputes
+every hash plus `sources_digest`, and is always announced out loud — it has real latency/token cost,
 unlike the cheap detection step, so it's never absorbed silently into a read. The same event
 unconditionally sweeps the whole `_unassigned` bucket too, not just entries related to whatever
 triggered the regeneration — classifying each file against the existing node list and attaching or
