@@ -90,6 +90,13 @@ applies.
   `status` (`TODO`/`IN-PROGRESS`/`REVIEW`/`DONE`/`CANCELED`).
 - Link with Obsidian wikilinks: `[[filename]]` or `[[filename|display
   text]]` (no extension, exact filename minus `.md`).
+- **Never hard-wrap note bodies.** Write each paragraph and each list item
+  as one single unbroken line and let Obsidian soft-wrap it. Manually
+  wrapping prose at ~80 columns (the habit that fits source code) makes
+  notes painful to edit in Obsidian: reflowing after a small edit means
+  rewrapping the whole paragraph by hand, and the stray newlines show up
+  as noise in diffs and search context. Line-based constructs — table
+  rows, headings, frontmatter, code blocks — keep their own line breaks.
 - Create notes via the `/sb-note` command; task-tracking notes are
   additionally managed by the `sb-task` skill (proactive status
   transitions via the `status:` frontmatter field).

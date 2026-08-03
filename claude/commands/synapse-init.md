@@ -99,14 +99,31 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
         just resolves.
      2. If that doesn't resolve, fall back to a web search for a community-maintained grammar for
         the language.
-     3. Verify before trusting: whatever's found must actually ship a tags query (`queries/tags.scm`,
-        possibly at a subpath for a multi-grammar repo — `tree-sitter-ocaml` ships three sub-grammars
-        under `grammars/`, and the subpath specifically matters there) — a repo existing isn't
-        sufficient on its own.
+     3. Verify before trusting: whatever's found must actually ship a tags query — a repo existing
+        isn't sufficient on its own, and plenty of grammars ship only `queries/highlights.scm`
+        (`tree-sitter-bash` is the notable one: no tags query anywhere in its tree, so `sh` is a
+        genuine `unsupported`). Check **both** the repo root and any sub-grammar subpath, in that
+        order — multi-grammar repos split either way and neither is the rule:
+        `tree-sitter-ocaml` puts a query under each of its three sub-grammars in `grammars/`, while
+        `tree-sitter-typescript` keeps a single shared `queries/tags.scm` at the root serving both
+        its `typescript/` and `tsx/` sub-grammars.
      4. Write the result back to `~/.claude/synapse-grammars.conf` (create it as `{}` first if it
         doesn't exist) — a positive entry (`{"repo": "...", "scope": "..."}`) if verified,
         `{"unsupported": true}` if nothing checks out. This is a permanent, cross-project cache
         keyed by extension — every future project skips rediscovery for this language entirely.
+
+        **The key is the bare extension with no leading dot** — `"rs"`, never `".rs"`, because
+        `synapse-tags.sh` derives it with `${BASENAME##*.}`. Getting this wrong fails *silently*
+        and expensively: the lookup misses, the script keeps returning exit 2, and discovery
+        re-runs for that language on every file in every project forever, caching nothing. So the
+        file should end up shaped like this:
+
+        ```json
+        {
+          "rs": { "repo": "https://github.com/tree-sitter/tree-sitter-rust", "scope": "source.rust" },
+          "sh": { "unsupported": true }
+        }
+        ```
      5. Announce the outcome either way ("found/verified a grammar for `.rs`, cached" or "no usable
         tree-sitter grammar for `.rs`, falling back to full reads"), then retry
         `synapse-tags.sh {path}` now that the registry has an entry (falls back to a full read for
