@@ -62,6 +62,19 @@ Worth stating plainly, because conflating the two produced a real bug (fw-core's
   re-emits everything outside verbatim — which is the mechanism behind the `## Notes` guarantee.
   Without a fence, "preserved verbatim" is a promise with nothing enforcing it.
 
+## What a session is told at startup
+
+The `SessionStart` hook injects two things, and neither is stored anywhere:
+
+- **A verified pointer to the cwd repo's own namespace**, emitted only when that namespace's `remote:` matches the repo's actual remote. On a mismatch it says so instead, rather than risk pointing at a different repo's graph.
+- **A catalogue of every *other* namespace in the vault** (`name | remote`), because one session routinely spans several repos — a change in one landing in another — and without it only the starting repo is ever announced. A session that moves into a listed repo can consult its graph, after verifying the listed remote against that repo's own.
+
+The catalogue is derived, never stored: the source of truth is the directory listing plus each namespace `Index.md`'s existing `remote:` field, so there is nothing to invalidate and it cannot drift from reality. A stored copy could be *wrong*; a derived one can only be absent. It also keeps this hook read-only against the vault — only `synapse-staleness.sh` writes.
+
+Cost is one `grep` fork regardless of namespace count (`-m1` stops inside each file's frontmatter), then `LC_ALL=C sort` so the injected text is byte-identical across runs and machines — collation is locale-dependent and the glob's order isn't reliably sorted, and non-deterministic context defeats prompt caching. Deliberately `grep` rather than `rg`: this ships to machines that may not have ripgrep, and rg measured ~2.9x slower on this workload anyway, being pure process-startup cost.
+
+Outside any git repo there is no pointer and nothing to exclude, so the catalogue lists everything. With no namespaces at all, nothing is emitted — the zero-cost path for repos that never opted in.
+
 ## Two-tier staleness
 
 **Tier 1 — `PostToolUse` → `synapse-staleness.sh`.** Fires on every `Write`/`Edit`/`MultiEdit`.
@@ -70,6 +83,8 @@ spanning several repos flags the right namespace in each. Looks the edited path 
 `_index.json`: if it belongs to one or more nodes, rewrites each one's `stale:` line to `true`; if
 it's not in the index at all, appends it to `_unassigned` instead. No hashing here — the hook already
 knows with certainty which file just changed, so this tier is pure bookkeeping, not verification.
+
+The hook also refuses to write when the namespace's `remote:` doesn't match the repo's, using the same origin → first-listed-remote → repo-root resolution the SessionStart hook and `synapse-verify.sh` use. A namespace with no readable `remote:` counts as a mismatch, not a match on the empty string: absent provenance is not permission to write. All three components must resolve the remote identically, or one refuses where another proceeds.
 
 It sets that field by **read-modify-write** (`GET`, rewrite the one `stale:` line, `PUT`), never by
 `PATCH` with `Target-Type: frontmatter`. That call is not field-local despite reading that way: it

@@ -101,8 +101,9 @@ bats tests/
 ```
 
 Covers `setup.sh` (idempotent install/merge into a scratch `$HOME`),
-`second-brain-session-start.sh` (index injection + the Synapse pointer
-check, pure git/filesystem, no network), `synapse-staleness.sh`
+`second-brain-session-start.sh` (index injection, the Synapse pointer
+check, and the other-namespaces catalogue — pure git/filesystem, no
+network), `synapse-staleness.sh`
 (Tier 1 staleness flagging, with `tests/fixtures/fake-bin/curl` stubbing
 out the Obsidian Local REST API so no real vault or plugin is needed),
 and `synapse-tags.sh` (registry lookup, exit-code contract, and

@@ -93,3 +93,110 @@ EOF
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+# --- namespace catalogue (sb-001 multi-repo discovery) ----------------------
+# One session routinely spans several repos, so the hook announces the *other*
+# namespaces too, not just the cwd repo's. Built per session and stored
+# nowhere: source of truth is the directory listing plus each Index.md's
+# `remote:` field.
+
+# Writes a namespace Index.md for a repo name that need not exist on disk.
+write_foreign_namespace() {
+  mkdir -p "$VAULT/synapse/$1"
+  cat > "$VAULT/synapse/$1/Index.md" <<EOF2
+---
+title: "$1 — Synapse index"
+node_type: synapse-index
+project: $1
+remote: "$2"
+built_at: "test"
+---
+# $1 — Synapse index
+EOF2
+}
+
+# $output is the hook's raw JSON, so the injected text is one line with
+# escaped newlines. Decode it before doing anything line-oriented.
+context() {
+  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext'
+}
+
+catalogue_lines() {
+  context | sed -n '/^Other Synapse namespaces/,$p' | sed '1d' | sed '/^$/d'
+}
+
+@test "catalogue: other namespaces are listed, the cwd repo's own is not" {
+  make_repo
+  write_vault_index
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
+  write_foreign_namespace "syrius-querschnitt-basis" "ssh://git@example.com/qst.git"
+
+  run run_hook "$REPO"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Other Synapse namespaces in this vault"* ]]
+  [[ "$output" == *"syrius3|ssh://git@example.com/syrius3.git"* ]]
+  [[ "$output" == *"syrius-querschnitt-basis|ssh://git@example.com/qst.git"* ]]
+  # own namespace excluded -- it already got the verified pointer above
+  [ "$(catalogue_lines | cut -d'|' -f1 | grep -cx "$(repo_name)" || true)" = "0" ]
+}
+
+@test "catalogue: only the cwd repo has a namespace, so no catalogue is emitted" {
+  make_repo
+  write_vault_index
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+
+  run run_hook "$REPO"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Other Synapse namespaces"* ]]
+  # the pointer itself is unaffected
+  [[ "$output" == *"Synapse namespace for this repo"* ]]
+}
+
+@test "catalogue: no synapse/ directory at all means nothing extra is emitted" {
+  make_repo
+  write_vault_index
+
+  run run_hook "$REPO"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Other Synapse namespaces"* ]]
+}
+
+@test "catalogue: ordering is LC_ALL=C sorted, not directory creation order" {
+  make_repo
+  write_vault_index
+  # created in deliberately non-alphabetical order
+  write_foreign_namespace "zzz-last" "ssh://git@example.com/z.git"
+  write_foreign_namespace "mmm-middle" "ssh://git@example.com/m.git"
+  write_foreign_namespace "aaa-first" "ssh://git@example.com/a.git"
+
+  run run_hook "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(catalogue_lines | sed -n 1p | cut -d'|' -f1)" = "aaa-first" ]
+  [ "$(catalogue_lines | sed -n 2p | cut -d'|' -f1)" = "mmm-middle" ]
+  [ "$(catalogue_lines | sed -n 3p | cut -d'|' -f1)" = "zzz-last" ]
+}
+
+@test "catalogue: outside any git repo, every namespace is listed and no pointer is emitted" {
+  local outside="$TEST_HOME/not-a-repo"
+  mkdir -p "$outside"
+  write_vault_index
+  write_foreign_namespace "fw-core" "ssh://git@example.com/fw.git"
+  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
+
+  run run_hook "$outside"
+  [ "$status" -eq 0 ]
+  # nothing to exclude, so both appear
+  [[ "$output" == *"fw-core|"* ]]
+  [[ "$output" == *"syrius3|"* ]]
+  [[ "$output" != *"Synapse namespace for this repo"* ]]
+}
+
+@test "catalogue: emitted even when the vault has no Index.md to inject" {
+  make_repo
+  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
+
+  run run_hook "$REPO"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"syrius3|"* ]]
+}
