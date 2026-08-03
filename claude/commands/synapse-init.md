@@ -73,6 +73,14 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
    `.gitattributes`-style judgment call would also drop (images, lockfiles with no prose value,
    `dist/`-style build output that somehow got tracked) — use judgment, this doesn't need to be
    exhaustive.
+
+   **Skip submodule gitlinks.** `git ls-files` reports a submodule as a single entry, but it is a
+   directory on disk — `git hash-object` fails on it and takes the whole batch down with it. Its
+   contents belong to another repo, which can have its own namespace, so it never belongs in
+   `sources`. Do **not** synthesise a hash from `git ls-files -s` instead: that would leave the
+   writer and `synapse-verify.sh` using different commands for one entry, which is exactly the
+   kind of asymmetry that produces a permanent false positive. Detect with a plain
+   "is this a regular file" test rather than parsing `.gitmodules`.
 2. **Read hint files, if present:** `CLAUDE.md` and `README.md` at the repo root. These bias the
    clustering pass in step 4 — they are never treated as authoritative structure, and the pass can
    and should diverge from them if the files themselves disagree. No other project-specific doc
