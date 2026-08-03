@@ -33,8 +33,19 @@ Use those instead of reinventing a parallel view.
   changed."
 - A task note already exists for this design (check the design note's `> Compiled task:` annotation,
   or `search_query` for a `projects/` note linking to it) → show its current state (title, `status:`,
-  checked/total) and ask: view it, or recompile fresh (only on explicit confirmation — recompiling
-  discards the old checklist's progress, since the new one gets a fresh `task_id`).
+  checked/total) and ask: view it, or recompile (only on explicit confirmation — recompiling rewrites
+  the checklist, so any progress on items that no longer exist is lost).
+
+  **A recompile updates the existing note in place. It never creates a second one and never bumps
+  the `task_id`.** One design has exactly one task note for its whole life; a design that gets
+  revised mid-implementation is the normal case, not a new task. Preserve `task_id`, `created`,
+  `status`, the filename, and any `## Notes` content the human added; replace the checklist and the
+  pre-implementation notes. Carry forward `- [x]` marks for items that survive the recompile
+  unchanged — work already done doesn't become undone because the plan around it grew.
+
+  Record *why* in the note itself, in one line at the top of the body: what the old plan got wrong
+  and what changed. A recompiled task with no explanation reads like a plan that was always this
+  shape, which hides the fact that implementation found a gap.
 
 ## Compiling the checklist
 
