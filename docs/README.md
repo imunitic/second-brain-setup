@@ -8,7 +8,9 @@ one matches what you're trying to understand.
   folder layout, and the three hooks that keep it alive across sessions (`SessionStart` injection,
   the `Stop` nudge, and vault→git auto-commit).
 - **[synapse.md](synapse.md)** — the per-repo semantic code graph: the two-tier staleness model,
-  `/synapse-init`, the `synapse-node` Tier 2 skill, and the optional tree-sitter acceleration layer.
+  `/synapse-init`, the `synapse-node` Tier 2 skill, `synapse-query.sh` (projected reads, so a node's
+  exhaustive `sources` never enters a context window), and the optional tree-sitter acceleration
+  layer.
 - **[design-task-workflow.md](design-task-workflow.md)** — the design-note → task-note pairing
   pipeline: `/sb-design-note`, `/sb-task-note`, the `sb-task` status-tracking skill, and the
   optional GitHub-issue mirror.

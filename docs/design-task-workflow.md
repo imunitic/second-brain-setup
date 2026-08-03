@@ -36,6 +36,18 @@ deliberate exclusions (with the reason each was excluded). After creation, the d
 gets a one-line `> Compiled task: [[...]]` annotation — the only place the two ever cross-reference
 each other; from there, Obsidian's own backlinks panel keeps them connected.
 
+## Revising a design mid-implementation
+
+A design that turns out to be wrong once you start building it is the normal case, not a new task.
+Re-running `/sb-task-note` on the same design **updates the existing task note in place** — same
+`task_id`, same filename, same `status`, and any `## Notes` a human added are preserved. Checklist
+items that survive the recompile unchanged keep their `- [x]` marks, because work already done
+doesn't become undone just because the plan around it grew.
+
+The recompile records *why* it happened in one line at the top of the body. Without that, a revised
+plan reads as though it was always that shape, which hides the fact that implementation found a gap
+— and that gap is usually the most useful thing the task note has to say.
+
 ## `sb-task`: status tracking
 
 A skill, not a command — invoked proactively, not waited for. Two transitions it owns entirely:

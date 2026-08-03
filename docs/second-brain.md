@@ -49,9 +49,11 @@ Nothing here runs on a schedule; everything is triggered by an actual session ev
 **`SessionStart` → `second-brain-session-start.sh`**
 Injects the vault's top-level `Index.md` into context at the start of every session, so its
 contents are live information from turn one rather than something Claude has to remember to go
-read. Also does one extra cheap check: resolves the current repo (if any) and looks for a matching
-Synapse namespace, appending a single pointer line if one exists and its `remote` field actually
-matches this repo — see [synapse.md](synapse.md) for what that namespace is.
+read. Also does two extra cheap checks. It resolves the current repo (if any) and appends a pointer to a
+matching Synapse namespace, if one exists and its `remote` field actually matches this repo. And it
+lists every *other* namespace in the vault as a `name | remote` catalogue, because one session
+routinely spans several repos and without it only the starting repo's graph is ever announced. Both
+are derived per session and stored nowhere — see [synapse.md](synapse.md) for the detail.
 
 **`Stop` → `second-brain-stop-nudge.sh`**
 A turn-count-based nudge, firing every 25 turns, asking: *did anything in this stretch belong in
