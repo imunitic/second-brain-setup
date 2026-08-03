@@ -56,6 +56,13 @@ if [ -d "$DEST/skills/obsidian-task" ] || [ -f "$DEST/bin/second-brain-switch" ]
   echo "    $DEST/commands/obsidian-*.md are no longer installed by this script and are safe"
   echo "    to remove by hand."
 fi
+# This script copies in but never deletes, so a file removed from the source
+# lingers in $DEST -- unreferenced but still executable, which is worse than
+# absent because it silently keeps working after the docs stop mentioning it.
+if [ -f "$DEST/bin/synapse-verify.sh" ]; then
+  echo "  NOTE: $DEST/bin/synapse-verify.sh is stale -- it folded into"
+  echo "    synapse-query.sh as the 'stale' subcommand. Safe to remove by hand."
+fi
 
 echo "== settings.json hook wiring =="
 SETTINGS="$DEST/settings.json"
