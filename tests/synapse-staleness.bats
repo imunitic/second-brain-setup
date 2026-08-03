@@ -258,7 +258,7 @@ JSON
 @test "namespace belongs to a different remote: no write, and no HTTP at all" {
   # A namespace is keyed by directory basename, so two unrelated repos sharing
   # one would write into each other's graph. This is the write-side half of the
-  # check the SessionStart hook and synapse-verify.sh already make.
+  # check the SessionStart hook and synapse-query.sh already make.
   make_repo "ssh://git@example.com/mine.git"
   write_synapse_index "$(repo_name)" "ssh://git@example.com/SOMEONE-ELSE.git"
   write_synapse_node "$(repo_name)" "Foo Node.md" false

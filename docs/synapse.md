@@ -84,7 +84,7 @@ spanning several repos flags the right namespace in each. Looks the edited path 
 it's not in the index at all, appends it to `_unassigned` instead. No hashing here — the hook already
 knows with certainty which file just changed, so this tier is pure bookkeeping, not verification.
 
-The hook also refuses to write when the namespace's `remote:` doesn't match the repo's, using the same origin → first-listed-remote → repo-root resolution the SessionStart hook and `synapse-verify.sh` use. A namespace with no readable `remote:` counts as a mismatch, not a match on the empty string: absent provenance is not permission to write. All three components must resolve the remote identically, or one refuses where another proceeds.
+The hook also refuses to write when the namespace's `remote:` doesn't match the repo's, using the same origin → first-listed-remote → repo-root resolution the SessionStart hook and `synapse-query.sh` use. A namespace with no readable `remote:` counts as a mismatch, not a match on the empty string: absent provenance is not permission to write. All three components must resolve the remote identically, or one refuses where another proceeds.
 
 It sets that field by **read-modify-write** (`GET`, rewrite the one `stale:` line, `PUT`), never by
 `PATCH` with `Target-Type: frontmatter`. That call is not field-local despite reading that way: it
@@ -95,7 +95,7 @@ false positive no rebuild can clear.
 
 **Tier 2 — read-time, the `synapse-node` skill.** Not a hook — a procedure Claude follows itself,
 proactively, whenever a node's body is about to actually be used (not a title-only skim). It runs
-`claude/bin/synapse-verify.sh`, which verifies the **whole project in one pass** — one
+`claude/bin/synapse-query.sh stale`, which verifies the **whole project in one pass** — one
 `git hash-object` fork plus one GET per node, ~1.5s for 51 nodes — and prints one line per stale node
 with a reason (content changed, source files gone by name, no digest, node file missing), or nothing
 at all when everything is current. Its exit 1 means "could not verify", not "clean".

@@ -34,7 +34,7 @@ REPO_NAME="$(basename "$REPO_ROOT")"
 
 # A namespace is keyed by directory basename, so two unrelated repos sharing
 # one would otherwise write into each other's graph. The SessionStart hook and
-# synapse-verify.sh both refuse on a remote mismatch; this is the write side of
+# synapse-query.sh both refuse on a remote mismatch; this is the write side of
 # the same check, and it must resolve the remote *identically* to them --
 # origin, then the first listed remote, then the repo root for a repo with no
 # remote at all. A different chain here means one component refuses where

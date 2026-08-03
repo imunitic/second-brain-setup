@@ -21,7 +21,7 @@ needs one.
 
 ## Procedure
 
-1. **Verify the whole project once, with the script.** Run `~/.claude/bin/synapse-verify.sh` from
+1. **Verify the whole project once, with the script.** Run `~/.claude/bin/synapse-query.sh stale` from
    inside the repo. It prints one `{node title}\t{reason}` line per stale node and nothing at all
    when everything is current, so its output is the complete stale set for the project.
 
@@ -47,15 +47,15 @@ needs one.
 3. **Read the node's body, never the whole file.** `sources` is exhaustive — every file the node
    covers, each with a hash — so a hub node's frontmatter alone can run to ~38k tokens while its
    actual prose is under 1k. Consultation never needs `sources`; the script handles verification.
-   So skip the frontmatter: find the closing `---` and read from there.
+   So skip the frontmatter entirely:
 
    ```sh
-   NODE="$OBSIDIAN_VAULT_DIR/synapse/{project}/{Node}.md"
-   FM_END=$(rg -n '^---$' "$NODE" | sed -n 2p | cut -d: -f1)   # closing --- of the frontmatter
-   # then Read the file with offset=$((FM_END + 1)) -- +1 so the delimiter itself is skipped
+   ~/.claude/bin/synapse-query.sh body "{Node title}"
    ```
 
-   That is ~900 tokens whether the node covers 5 files or 941. **A full `mcp__obsidian__vault_read`
+   That prints only what is between the generated fences — so it excludes `## Notes` as well as the
+   frontmatter, which a raw offset read would not — and costs ~500 tokens whether the node covers 5
+   files or 941. **A full `mcp__obsidian__vault_read`
    of a hub node is a mistake, not merely expensive** — it spends tens of thousands of tokens on a
    path list you are not going to use. Use `vault_read` only when you specifically need the
    frontmatter or the links/backlinks metadata it returns.
@@ -63,6 +63,10 @@ needs one.
    Finding *which* node to read is a separate job, and search does it: because `sources` is
    exhaustive, `mcp__obsidian__search_simple` on a class or file name locates the owning node even
    when that name appears nowhere in any node's prose, and returns snippets rather than whole files.
+
+   For the other questions about a node, use the same tool rather than reading frontmatter:
+   `synapse-query.sh sources "{Node}" --count|--modules|--filter <p>` for what it covers, and
+   `synapse-query.sh field "{Node}" <key>` for a single scalar such as `stale` or `built_at`.
 
 4. **Regeneration (only if step 1 or 2 found the node stale):**
    - For each of the node's current `sources` files, try `~/.claude/bin/synapse-tags.sh {path}`
@@ -87,7 +91,7 @@ needs one.
      artifact: the `sb-task` skill *does* append there. Do not carry that habit into a Synapse node.)
    - Recompute `git hash-object` for **every** source, update `sources` in frontmatter, and recompute
      `sources_digest` (sha256 over the `LC_ALL=C` sorted `path:hash` lines, newline-joined, no
-     trailing newline — the definition pinned in `/synapse-init`, which `synapse-verify.sh` must be
+     trailing newline — the definition pinned in `/synapse-init`, which `synapse-query.sh stale` must be
      able to reproduce exactly).
    - Rewrite `## Sources` as the **aggregated** human mirror: one line per owning directory or module
      with a file count, `LC_ALL=C` sorted — not a path list. The exhaustive list lives in frontmatter
@@ -124,7 +128,7 @@ needs one.
 
 ## Guardrails
 
-- Never skip `synapse-verify.sh` just because `stale: false` looked plausible — Tier 1 only catches
+- Never skip `synapse-query.sh stale` just because `stale: false` looked plausible — Tier 1 only catches
   edits made through this Claude Code session; a `git pull`, branch switch, or externally-made
   edit is invisible to it and only the script catches those.
 - Never hand-roll the verification by reading `sources` or `_index.json` — that is the whole reason
