@@ -90,13 +90,49 @@ applies.
   `status` (`TODO`/`IN-PROGRESS`/`REVIEW`/`DONE`/`CANCELED`).
 - Link with Obsidian wikilinks: `[[filename]]` or `[[filename|display
   text]]` (no extension, exact filename minus `.md`).
-- **Never hard-wrap note bodies.** Write each paragraph and each list item
-  as one single unbroken line and let Obsidian soft-wrap it. Manually
-  wrapping prose at ~80 columns (the habit that fits source code) makes
-  notes painful to edit in Obsidian: reflowing after a small edit means
-  rewrapping the whole paragraph by hand, and the stray newlines show up
-  as noise in diffs and search context. Line-based constructs — table
-  rows, headings, frontmatter, code blocks — keep their own line breaks.
+- **Never hard-wrap note bodies. A newline exists if and only if a break is
+  intended in the output** — source line structure mirrors the output's block
+  structure. Write each paragraph and each list item as one single unbroken
+  line and let the editor soft-wrap it. Sentence and clause boundaries are
+  *not* logical breaks: the paragraph is the unit and sentences flow within
+  it. Line-based constructs — headings, list items, table rows, frontmatter,
+  code blocks — legitimately own their newlines and keep them.
+
+  The point is not merely that rewrapping by hand is tedious (though it is,
+  and stray newlines are diff and search-context noise). It is that this
+  makes the text **renderer-independent**: if a newline never appears where
+  no break is wanted, then "does a single newline render as `<br>` or as a
+  space?" never arises, and strict CommonMark, non-strict CommonMark,
+  Obsidian, pandoc and GitHub all produce the same result — the ambiguous
+  input case is simply gone. This is HTML's content model applied to plain
+  text: a newline is markup meaning "break here", not cosmetic formatting of
+  the source file.
+
+  It also keeps **line length a view decision rather than a content one**.
+  Hard-wrapping is the author asserting a measure, baking one viewport into
+  the text; unwrapped, the same bytes are correct at every width — Obsidian's
+  "Readable line length" on or off, a narrow split pane, a wide monitor,
+  mobile, print. Hard-wrapped prose fails both ways and is unfixable at read
+  time: at 80 columns it double-wraps raggedly in a narrow pane, and sits as a
+  fixed narrow ribbon in a wide one. Wanting a ~66-character measure is right
+  (it's a real typographic optimum, which is why that setting exists) — put it
+  in the renderer, which can adapt, not in the content, which can't.
+
+  **Corollary — never fake a break.** Don't rely on a soft newline inside a
+  paragraph or blockquote to produce separate lines, and don't reach for
+  trailing double-spaces or a trailing `\`. If several entries each need
+  their own line, they *are* separate items: use a list, which owns its line
+  breaks, nested inside the blockquote if the blockquote framing is wanted
+  (`> - entry`). Consecutive bare `>` lines render as one flowing paragraph
+  under strict CommonMark, and separating them with blank `>` lines makes
+  them full paragraphs with paragraph spacing — neither is what "three
+  labelled lines" means.
+
+  Accepted costs, both tooling-side rather than content-side: a line-based
+  diff treats a paragraph as atomic (use word-level diffing — `--word-diff`,
+  or a review UI that highlights intra-line changes), and very long lines are
+  awkward in tools that don't soft-wrap (`less` without `-S`, narrow terminal
+  diffs).
 - Create notes via the `/sb-note` command; task-tracking notes are
   additionally managed by the `sb-task` skill (proactive status
   transitions via the `status:` frontmatter field).
