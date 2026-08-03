@@ -134,8 +134,12 @@ EOF
   # PUT a stray `_unassigned` field onto it. Found in the wild: exactly this
   # happened to two repos edited before ever running /synapse-init.
   make_repo
-  # No write_synapse_index call, no --2nd-arg body -- fake curl's GET
-  # returns the real API's 404 JSON body + status 404.
+  # The namespace Index.md must exist with a matching remote, or the hook's
+  # remote guard exits before the GET and this test would pass vacuously --
+  # covering the guard rather than the 404 handling it is named for.
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  # No --2nd-arg body -- fake curl's GET returns the real API's 404 JSON
+  # body + status 404 for _index.json.
   run run_staleness_hook "$REPO/src/foo.ml" ""
   [ "$status" -eq 0 ]
   [ ! -f "$CURL_CAPTURE/index-put.json" ]
@@ -249,4 +253,63 @@ JSON
   run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
   [ ! -f "$CURL_CAPTURE/node-puts.log" ]
+}
+
+@test "namespace belongs to a different remote: no write, and no HTTP at all" {
+  # A namespace is keyed by directory basename, so two unrelated repos sharing
+  # one would write into each other's graph. This is the write-side half of the
+  # check the SessionStart hook and synapse-verify.sh already make.
+  make_repo "ssh://git@example.com/mine.git"
+  write_synapse_index "$(repo_name)" "ssh://git@example.com/SOMEONE-ELSE.git"
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Foo Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [ ! -f "$CURL_CAPTURE/node-puts.log" ]
+  [ ! -f "$CURL_CAPTURE/index-put.json" ]
+  # The guard is ahead of any HTTP, so nothing should have been dialed at all.
+  [ ! -s "$CURL_LOG" ]
+  grep -q '^stale: false$' "$VAULT/synapse/$(repo_name)/Foo Node.md"
+}
+
+@test "namespace Index.md with no remote line: treated as a mismatch, not a match on empty" {
+  make_repo "ssh://git@example.com/mine.git"
+  mkdir -p "$VAULT/synapse/$(repo_name)"
+  cat > "$VAULT/synapse/$(repo_name)/Index.md" <<'EOF2'
+---
+title: "no remote here"
+---
+# index
+EOF2
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Foo Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [ ! -f "$CURL_CAPTURE/node-puts.log" ]
+  [ ! -s "$CURL_LOG" ]
+}
+
+@test "repo with no remote at all: falls back to the repo root and still matches" {
+  # A repo without an `origin` must compare equal against its own namespace --
+  # this is why the hook has to reuse the exact origin -> first-remote ->
+  # repo-root chain the other components use.
+  make_repo   # no remote argument
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_synapse_node "$(repo_name)" "Foo Node.md" false
+
+  cat > "$TEST_HOME/index-body.json" <<'JSON'
+{"src/foo.ml": ["Foo Node.md"], "_unassigned": []}
+JSON
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  grep -q "stale: true" "$VAULT/synapse/$(repo_name)/Foo Node.md"
 }

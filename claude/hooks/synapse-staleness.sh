@@ -32,6 +32,39 @@ REPO_ROOT="$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null |
 [ -n "$REPO_ROOT" ] || exit 0
 REPO_NAME="$(basename "$REPO_ROOT")"
 
+# A namespace is keyed by directory basename, so two unrelated repos sharing
+# one would otherwise write into each other's graph. The SessionStart hook and
+# synapse-verify.sh both refuse on a remote mismatch; this is the write side of
+# the same check, and it must resolve the remote *identically* to them --
+# origin, then the first listed remote, then the repo root for a repo with no
+# remote at all. A different chain here means one component refuses where
+# another proceeds, which is worse than either behaviour on its own.
+REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+if [ -z "$REMOTE" ]; then
+  FIRST_REMOTE="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
+  [ -n "$FIRST_REMOTE" ] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$FIRST_REMOTE" 2>/dev/null || true)"
+fi
+[ -n "$REMOTE" ] || REMOTE="$REPO_ROOT"
+
+# Read the namespace's own Index.md from disk rather than over REST: this is a
+# read, $VAULT is already known and checked above, and it keeps the guard ahead
+# of any HTTP at all. A namespace with no readable `remote:` line counts as a
+# mismatch, not as a match against the empty string -- absent provenance is not
+# permission to write.
+# Note the `|| true` and the `if` wrapper: under `set -euo pipefail` a grep
+# that matches nothing fails the pipeline and would kill the hook outright
+# instead of skipping quietly. A hook erroring out is worse than the write it
+# was guarding against.
+NS_INDEX="$VAULT/synapse/$REPO_NAME/Index.md"
+NS_REMOTE=""
+if [ -f "$NS_INDEX" ]; then
+  NS_REMOTE="$(grep -m1 '^remote:' "$NS_INDEX" 2>/dev/null \
+    | sed -e 's/^remote: *//' -e 's/^"//' -e 's/"$//' || true)"
+fi
+if [ -z "$NS_REMOTE" ] || [ "$NS_REMOTE" != "$REMOTE" ]; then
+  exit 0
+fi
+
 # Resolve FILE's directory to its physical (symlink-free) path before the
 # prefix strip below -- git rev-parse --show-toplevel already resolves
 # symlinks in REPO_ROOT (e.g. macOS /tmp -> /private/tmp), but tool_input's
