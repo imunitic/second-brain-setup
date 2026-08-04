@@ -28,6 +28,10 @@ ExcalidrawZ:
 - `diagrams/second-brain-overview.png`
 - `diagrams/synapse-tiers.png`
 - `diagrams/design-task-workflow.png`
+- `diagrams/synapse-pipeline.png` — every script in one picture: which step of a build each one
+  owns, what it writes, and where the model's two contributions enter. Laid out as three lanes
+  (model judgment / script mechanics / vault artifacts) so the seam is visible as the only place
+  arrows cross from the first lane into the second.
 
 The matching `.excalidraw` source files are also in that folder — a rough first-pass layout, not
 meant as the final art. Open one in ExcalidrawZ (or excalidraw.com) as a starting point, or ignore
