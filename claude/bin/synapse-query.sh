@@ -127,6 +127,19 @@ EXISTING_REMOTE="$(grep -m1 '^remote:' "$WORK/Index.md" | sed -e 's/^remote: *//
 
 # --- shared helpers ---------------------------------------------------------
 
+# _index.json is read straight from disk, not over the API. It is derived and
+# machine-only -- nothing but these scripts writes it -- and on a 125k-file repo it
+# is 27 MB, so fetching it over HTTPS to answer a key lookup dominated every call
+# that needed it. Notes still go through the API, which is where that rule earns
+# its keep: Obsidian's own search beats grepping Markdown.
+#
+# Absence is "no namespace for this repo", which is exit 1 here -- "could not
+# verify", never "clean". No separate `jq -e .` validation: every extraction below
+# is already guarded, and a malformed index makes jq fail there, reaching the same
+# exit 1 without paying a full 27 MB parse first.
+INDEX_FILE="$VAULT/synapse/$REPO_NAME/_index.json"
+require_index() { [ -f "$INDEX_FILE" ] || exit 1; }
+
 # Fetches a node into $WORK/node.md. Accepts the title with or without `.md`.
 fetch_node() { # fetch_node <node>
   local node="$1"
@@ -251,13 +264,12 @@ cmd_field() {
 
 cmd_stale() {
   [ $# -eq 0 ] || usage
-  api_get_to "synapse/$REPO_NAME/_index.json" "$WORK/_index.json" || exit 1
-  jq -e . "$WORK/_index.json" >/dev/null 2>&1 || exit 1
+  require_index
 
   # Node list comes from _index.json's values -- authoritative for which nodes
   # exist, and already in hand, so no directory listing is needed.
   jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
-    "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+    "$INDEX_FILE" > "$WORK/nodes.txt" 2>/dev/null || exit 1
 
   # The node's `sources` is the authority on what it covers, not _index.json --
   # verifying against the index instead would mask node/index drift, and would
@@ -330,10 +342,9 @@ cmd_drift() {
   [ $# -eq 0 ] || usage
   command -v comm >/dev/null || exit 1
 
-  api_get_to "synapse/$REPO_NAME/_index.json" "$WORK/_index.json" || exit 1
-  jq -e . "$WORK/_index.json" >/dev/null 2>&1 || exit 1
+  require_index
   jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
-    "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+    "$INDEX_FILE" > "$WORK/nodes.txt" 2>/dev/null || exit 1
 
   # Findings are buffered rather than printed as they are found, so that silence can
   # mean "the graph matches the worktree". Context -- how far behind upstream, how
@@ -411,7 +422,7 @@ cmd_drift() {
   # already claim them, so only the remainder needs a decision.
   cat "$WORK"/diff-*.add 2>/dev/null | LC_ALL=C sort -u > "$WORK/added.txt"
   if [ -s "$WORK/added.txt" ]; then
-    jq -r 'keys[]' "$WORK/_index.json" | LC_ALL=C sort > "$WORK/claimed.txt"
+    jq -r 'keys[]' "$INDEX_FILE" | LC_ALL=C sort > "$WORK/claimed.txt"
     LC_ALL=C comm -23 "$WORK/added.txt" "$WORK/claimed.txt" > "$WORK/unclaimed.txt"
     if [ -s "$WORK/unclaimed.txt" ]; then
       MANIFEST=""
@@ -498,10 +509,9 @@ cmd_grounding() {
     return
   fi
   [ $# -eq 0 ] || usage
-  api_get_to "synapse/$REPO_NAME/_index.json" "$WORK/_index.json" || exit 1
-  jq -e . "$WORK/_index.json" >/dev/null 2>&1 || exit 1
+  require_index
   jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
-    "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+    "$INDEX_FILE" > "$WORK/nodes.txt" 2>/dev/null || exit 1
 
   while IFS= read -r node; do
     [ -n "$node" ] || continue

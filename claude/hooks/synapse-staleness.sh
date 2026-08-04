@@ -100,29 +100,39 @@ urlencode_path() {
 INDEX_VAULT_PATH="synapse/$REPO_NAME/_index.json"
 INDEX_URL="$BASE/vault/$(urlencode_path "$INDEX_VAULT_PATH")"
 
-INDEX_RESPONSE="$(curl -s -w '\n%{http_code}' --cacert "$CERT" -H "Authorization: Bearer $API_KEY" "$INDEX_URL" || true)"
-HTTP_CODE="$(printf '%s' "$INDEX_RESPONSE" | tail -n1)"
-INDEX_JSON="$(printf '%s' "$INDEX_RESPONSE" | sed '$d')"
+INDEX_FILE="$VAULT/$INDEX_VAULT_PATH"
 
-# No namespace for this repo at all -- the whole point of the opt-in
-# /synapse-init step is that this is the only cost paid for a project that
-# never ran it, and even this is only reached on an actual edit, not per turn.
-# Checking the HTTP status (not just "is the body valid JSON") matters: a 404
-# from a nonexistent _index.json comes back as a JSON error body
-# (`{"message":"Not Found",...}`), which would otherwise pass a bare `jq -e .`
-# check and get a stray `_unassigned` field written onto it.
-[ "$HTTP_CODE" = "200" ] || exit 0
-printf '%s' "$INDEX_JSON" | jq -e . >/dev/null 2>&1 || exit 0
+# Read the index from disk, not over the API. It is a derived, machine-only file
+# that nothing but these scripts writes, and every write below still goes through
+# the API, so Obsidian's view and the vault's git history stay correct.
+#
+# The reason is cost, and it is the one cost in Synapse that scales with the repo
+# rather than the node count. On a 125k-file repo this file is 27 MB; fetching it
+# over HTTPS to answer a single key lookup dominated the hook at ~3.1s, paid on
+# every Write/Edit/MultiEdit. From disk the same read is ~0.03s.
+#
+# A missing file is the "no namespace" case: /synapse-init has not been run here.
+# That check replaces the old HTTP-status test, and is exact rather than
+# approximate -- the API returns a 404 whose *body is valid JSON*
+# (`{"message":"Not Found",...}`), so reading the status was the only way to tell
+# an absent index from a real one. On disk the question is just whether the file
+# is there.
+[ -f "$INDEX_FILE" ] || exit 0
 
-NODES="$(printf '%s' "$INDEX_JSON" | jq -r --arg rel "$REL" '.[$rel] // [] | .[]' 2>/dev/null || true)"
+NODES="$(jq -r --arg rel "$REL" '.[$rel] // [] | .[]' "$INDEX_FILE" 2>/dev/null || true)"
 
 if [ -z "$NODES" ]; then
   # Genuinely new file, not yet claimed by any node -- queue it for the
   # _unassigned sweep (see /synapse-init's "Re-running on an initialized
   # project" and the Tier 2 read-time procedure).
-  UPDATED="$(printf '%s' "$INDEX_JSON" | jq --arg rel "$REL" '
+  UPDATED="$(jq --arg rel "$REL" '
     .["_unassigned"] = ((.["_unassigned"] // []) + [$rel] | unique)
-  ')"
+  ' "$INDEX_FILE" 2>/dev/null || true)"
+  # The upfront `jq -e .` validation is gone (it duplicated a status check that
+  # disk existence now answers exactly), so this is where a malformed index has to
+  # be caught: jq would print nothing, and PUTting that would replace a 27 MB
+  # index with an empty body. Refuse to write rather than destroy it.
+  [ -n "$UPDATED" ] || exit 0
   curl -s -o /dev/null --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
     -X PUT -H "Content-Type: application/json" --data-binary "$UPDATED" "$INDEX_URL"
   exit 0

@@ -54,6 +54,12 @@ teardown() {
 # path, or empty for "no namespace exists / 404").
 run_staleness_hook() {
   local file="$1" index_body="${2:-}"
+  # The hook reads _index.json from disk rather than over the API, so the fixture
+  # has to exist there. An empty $index_body means "no namespace" and must leave
+  # no file behind -- that is the case the hook exits on.
+  local idx="$VAULT/synapse/$(repo_name)/_index.json"
+  if [ -n "$index_body" ]; then mkdir -p "$(dirname "$idx")"; cp "$index_body" "$idx"
+  else rm -f "$idx"; fi
   PATH="$FAKE_BIN:$PATH" \
     FAKE_CURL_LOG="$CURL_LOG" \
     FAKE_CURL_CAPTURE_DIR="$CURL_CAPTURE" \
@@ -454,4 +460,32 @@ make_cited_repo() {
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "PostToolUse"' >/dev/null
   printf '%s' "$output" | jq -e '.hookSpecificOutput.additionalContext | length > 0' >/dev/null
+}
+
+@test "index: a malformed _index.json is left alone, not overwritten with nothing" {
+  # The upfront `jq -e .` validation was dropped when the index moved to a disk
+  # read (file existence answers "no namespace" exactly, which is what that check
+  # was standing in for). This is where a malformed index has to be caught
+  # instead: jq prints nothing, and PUTting nothing would replace a 27MB index
+  # with an empty body.
+  make_repo
+  printf '{"src/foo.ml": ["Foo Node.md"' > "$TEST_HOME/bad-index.json"   # truncated
+  local idx="$VAULT/synapse/$(repo_name)/_index.json"
+  local before; before="$(cat "$TEST_HOME/bad-index.json")"
+
+  run run_staleness_hook "$REPO/src/foo.ml" "$TEST_HOME/bad-index.json"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$idx")" = "$before" ]
+  # and nothing was sent to the API at all
+  [ ! -f "$CURL_CAPTURE/index-put.json" ]
+}
+
+@test "index: absent _index.json is the no-namespace case, and costs nothing" {
+  make_repo
+  rm -f "$VAULT/synapse/$(repo_name)/_index.json"
+  run run_staleness_hook "$REPO/src/foo.ml"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  # no HTTP traffic whatsoever for a repo that never opted in
+  [ ! -s "$CURL_LOG" ]
 }
