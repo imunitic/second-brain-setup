@@ -140,31 +140,56 @@ EXISTING_REMOTE="$(grep -m1 '^remote:' "$WORK/Index.md" | sed -e 's/^remote: *//
 INDEX_FILE="$VAULT/synapse/$REPO_NAME/_index.json"
 require_index() { [ -f "$INDEX_FILE" ] || exit 1; }
 
-# Fetches a node into $WORK/node.md. Accepts the title with or without `.md`.
+# Resolves a node to its path on disk in $NODE_FILE, copying nothing. Accepts the
+# title with or without `.md`; returns 1 when there is no such node.
+#
+# A targeted read of a known path, not a search -- which is the line that decides
+# whether this goes through the API. Searching, querying frontmatter across notes
+# and traversing links are what the API is for and what it is good at (see
+# `grounded_rows`). Pulling one known file through it is the opposite: the response
+# carries the node's entire `sources` block, which on a hub node is 4.5 MB, to
+# print a few hundred words of prose. `Accept: application/vnd.olrapi.note+json`
+# is worse still -- 7.86 MB for that same node, because it JSON-encodes the content
+# and appends parsed frontmatter, links, backlinks and tags, and its `content`
+# field includes the frontmatter regardless.
+#
+# Writes still go through the API, so Obsidian's view and the vault's own git
+# history stay correct.
 fetch_node() { # fetch_node <node>
   local node="$1"
   case "$node" in *.md) ;; *) node="$node.md" ;; esac
-  api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md" || return 1
+  NODE_FILE="$VAULT/synapse/$REPO_NAME/$node"
+  [ -f "$NODE_FILE" ] || return 1
   printf '%s' "$node"
 }
 
-# One parser for `grounded_in`, shared by the verifier and the --list path: two
-# implementations of one format is the drift this codebase keeps paying for.
-# Positional rather than a YAML library, like everything else here -- no
-# dependency beyond jq. Prints `path<TAB>lines<TAB>digest` per entry.
-extract_grounded_in() { # extract_grounded_in <node-file>
-  awk '
-    NR == 1 && $0 == "---" { fm = 1; next }
-    fm && $0 == "---" { exit }
-    !fm { next }
-    /^grounded_in:[[:space:]]*$/ { g = 1; next }
-    g && /^[^[:space:]]/ { g = 0 }
-    g && /^  - path:/ { p = $0; sub(/^  - path:[[:space:]]*/, "", p); next }
-    g && /^    lines:/ { l = $0; sub(/^    lines:[[:space:]]*/, "", l); gsub(/"/, "", l); next }
-    g && /^    digest:/ { d = $0; sub(/^    digest:[[:space:]]*/, "", d)
-                          if (p != "" && l != "" && d != "") print p "\t" l "\t" d
-                          p = ""; l = ""; d = ""; next }
-  ' "$1"
+# Asks the API to evaluate a frontmatter expression across the vault and return
+# the value per note, via its JsonLogic search endpoint. This is the right tool
+# for the job in the API's own terms -- full-text search, frontmatter queries and
+# graph traversal are what it exists for -- and it is also the cheap way round:
+# reading `grounded_in` by fetching whole nodes moved 34 MB across 48 requests on
+# syrius3 to obtain 14 lines, because a hub node's `sources` block is megabytes.
+# One request, under a kilobyte back.
+#
+# Only notes where the field is truthy come back, which is exactly the set worth
+# verifying. The response covers the whole vault, so it is filtered to this repo's
+# namespace -- another repo's nodes are not this command's business.
+api_search_frontmatter() { # api_search_frontmatter <frontmatter-field>
+  curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
+    -H 'Content-Type: application/vnd.olrapi.jsonlogic+json' \
+    -X POST --data-binary "$(jq -nc --arg f "frontmatter.$1" '{"var": $f}')" \
+    "$BASE/search/"
+}
+
+# node<TAB>path<TAB>lines<TAB>digest, one row per recorded grounding.
+grounded_rows() {
+  api_search_frontmatter grounded_in \
+    | jq -r --arg pfx "synapse/$REPO_NAME/" '
+        .[]? | select(.filename | startswith($pfx))
+        | (.filename | ltrimstr($pfx) | rtrimstr(".md")) as $n
+        | (.result // empty)
+        | if type == "array" then .[] else empty end
+        | [$n, .path, (.lines | tostring), .digest] | @tsv'
 }
 
 extract_source_paths() { # frontmatter `  - path: X` lines, in file order
@@ -200,15 +225,15 @@ cmd_body() {
   fetch_node "$node" >/dev/null || exit 1
   # Between the generated fences: excludes the frontmatter *and* `## Notes`,
   # which is strictly better than reading from after the closing `---`.
-  if grep -q '<!-- synapse:generated:start -->' "$WORK/node.md"; then
-    sed -n '/<!-- synapse:generated:start -->/,/<!-- synapse:generated:end -->/p' "$WORK/node.md" \
+  if grep -q '<!-- synapse:generated:start -->' "$NODE_FILE"; then
+    sed -n '/<!-- synapse:generated:start -->/,/<!-- synapse:generated:end -->/p' "$NODE_FILE" \
       | sed -e '1d' -e '$d'
     return 0
   fi
   # A node built before fencing existed: fall back to everything after the
   # closing `---`, and say so, since `## Notes` will be included.
   echo "synapse-query: no generated fence in '$node'; printing everything after the frontmatter" >&2
-  awk 'NR==1 && $0=="---" { in_fm=1; next } in_fm && $0=="---" { in_fm=0; body=1; next } body' "$WORK/node.md"
+  awk 'NR==1 && $0=="---" { in_fm=1; next } in_fm && $0=="---" { in_fm=0; body=1; next } body' "$NODE_FILE"
 }
 
 cmd_sources() {
@@ -224,7 +249,7 @@ cmd_sources() {
   esac
 
   fetch_node "$node" >/dev/null || exit 1
-  extract_source_paths "$WORK/node.md" > "$WORK/paths.txt"
+  extract_source_paths "$NODE_FILE" > "$WORK/paths.txt"
 
   case "$mode" in
     count) wc -l < "$WORK/paths.txt" | tr -d ' ' ;;
@@ -259,7 +284,7 @@ cmd_field() {
       print
       exit
     }
-  ' "$WORK/node.md"
+  ' "$NODE_FILE"
 }
 
 cmd_stale() {
@@ -276,18 +301,19 @@ cmd_stale() {
   # report a false mismatch whenever the two disagree for an unrelated reason.
   while IFS= read -r node; do
     [ -n "$node" ] || continue
-    if ! api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md"; then
+    NODE_FILE="$VAULT/synapse/$REPO_NAME/$node"
+    if [ ! -f "$NODE_FILE" ]; then
       printf '%s\tnode file missing from the vault\n' "${node%.md}"
       continue
     fi
 
-    STORED="$(grep -m1 '^sources_digest:' "$WORK/node.md" | sed -e 's/^sources_digest: *//' -e 's/^"//' -e 's/"$//')"
+    STORED="$(grep -m1 '^sources_digest:' "$NODE_FILE" | sed -e 's/^sources_digest: *//' -e 's/^"//' -e 's/"$//')"
     if [ -z "$STORED" ]; then
       printf '%s\tno sources_digest (built before the digest existed)\n' "${node%.md}"
       continue
     fi
 
-    extract_source_paths "$WORK/node.md" > "$WORK/paths.txt"
+    extract_source_paths "$NODE_FILE" > "$WORK/paths.txt"
     if [ ! -s "$WORK/paths.txt" ]; then
       printf '%s\tno sources listed\n' "${node%.md}"
       continue
@@ -359,11 +385,12 @@ cmd_drift() {
 
   while IFS= read -r node; do
     [ -n "$node" ] || continue
-    if ! api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md"; then
+    NODE_FILE="$VAULT/synapse/$REPO_NAME/$node"
+    if [ ! -f "$NODE_FILE" ]; then
       printf '%s\tnode file missing from the vault\n' "${node%.md}" >> "$WORK/found-nodes.txt"
       continue
     fi
-    baseline="$(frontmatter_field "$WORK/node.md" commit)"
+    baseline="$(frontmatter_field "$NODE_FILE" commit)"
     if [ -z "$baseline" ]; then
       printf '%s\tno commit recorded, so nothing to diff against -- verify with `stale`\n' "${node%.md}" >> "$WORK/found-nodes.txt"
       continue
@@ -374,7 +401,7 @@ cmd_drift() {
       continue
     fi
     printf '%s\n' "$baseline" >> "$WORK/baselines.txt"
-    extract_source_paths "$WORK/node.md" | LC_ALL=C sort > "$WORK/paths-$node.txt"
+    extract_source_paths "$NODE_FILE" | LC_ALL=C sort > "$WORK/paths-$node.txt"
     printf '%s\t%s\n' "$node" "$baseline" >> "$WORK/node-baseline.tsv"
   done < "$WORK/nodes.txt"
 
@@ -499,8 +526,11 @@ cmd_drift() {
 # this the round trip loses them silently: they live in frontmatter, and `body`
 # returns prose, so writing a recovered body back would drop every grounding.
 cmd_grounding_list() { # cmd_grounding_list <node>
-  NODE="$(fetch_node "$1")" || exit 1
-  extract_grounded_in "$WORK/node.md" | cut -f1,2
+  local want="${1%.md}"
+  # Verifies the node exists before reporting "no groundings", so a typo'd title
+  # cannot read as "this node has none".
+  fetch_node "$1" >/dev/null || exit 1
+  grounded_rows | awk -F'\t' -v n="$want" '$1 == n { print $2 "\t" $3 }'
 }
 
 cmd_grounding() {
@@ -509,18 +539,11 @@ cmd_grounding() {
     return
   fi
   [ $# -eq 0 ] || usage
-  require_index
-  jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
-    "$INDEX_FILE" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+  # No node enumeration and no per-node fetch: the search returns every node that
+  # records a grounding, which is precisely the set to check.
+  grounded_rows > "$WORK/rows.tsv" || exit 1
 
-  while IFS= read -r node; do
-    [ -n "$node" ] || continue
-    api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md" || continue
-
-    extract_grounded_in "$WORK/node.md" > "$WORK/grounded.txt"
-    [ -s "$WORK/grounded.txt" ] || continue
-
-    while IFS="$(printf '\t')" read -r g_path g_lines g_digest; do
+  while IFS="$(printf '\t')" read -r node g_path g_lines g_digest; do
       [ -n "$g_path" ] || continue
       if [ ! -f "$REPO_ROOT/$g_path" ]; then
         printf '%s\tgrounding file gone: %s\n' "${node%.md}" "$g_path"
@@ -553,8 +576,7 @@ cmd_grounding() {
         printf '%s\tgrounding changed: %s %s (re-check the claim resting on it)\n' \
           "${node%.md}" "$g_path" "$g_lines"
       fi
-    done < "$WORK/grounded.txt"
-  done < "$WORK/nodes.txt"
+  done < "$WORK/rows.tsv"
 }
 
 

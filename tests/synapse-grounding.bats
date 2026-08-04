@@ -50,6 +50,14 @@ build_grounded_node() {
 
 @test "grounding: silence when every recorded grounding still matches" {
   build_grounded_node
+  # Positive control first. Silence is the success signal here, so without proving
+  # the grounding is actually visible to the command, this test passes just as
+  # happily when the lookup is broken and finds nothing at all -- which is exactly
+  # how a misordered curl argument once made five of these pass for free.
+  run in_repo "$QUERY" grounding "Premium" --list
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+
   run in_repo "$QUERY" grounding
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -57,6 +65,8 @@ build_grounded_node() {
 
 @test "grounding: an unrelated edit elsewhere in the file stays silent" {
   build_grounded_node
+  run in_repo "$QUERY" grounding "Premium" --list   # positive control, as above
+  [ -n "$output" ]
   # Appending below the grounded range must not disturb it -- this is what
   # digesting the slice rather than the file buys.
   printf 'let tail = 99\n' >> "$REPO/lib/calc.ml"

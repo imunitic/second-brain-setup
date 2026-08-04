@@ -40,7 +40,14 @@ printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
 
 args=("$@")
 n=${#args[@]}
-url="${args[$((n-1))]}"
+# The URL is found by pattern, not by position. Assuming it was the last argument
+# meant that a call passing --data-binary after the URL silently searched for
+# nothing and returned [], which reads as "no results" rather than as a mistake --
+# and made a test asserting silence pass for the wrong reason.
+url=""
+for ((i = 0; i < n; i++)); do
+  case "${args[$i]}" in https://*|http://*) url="${args[$i]}" ;; esac
+done
 
 method="GET"
 data=""
@@ -92,6 +99,53 @@ case "$method" in
     else
       printf '{"message":"Not Found","errorCode":40400}\n404'
     fi
+    ;;
+  POST)
+    # JsonLogic frontmatter search. Emulates the Local REST API's /search/ for the
+    # single expression shape the scripts use, {"var":"frontmatter.<field>"},
+    # returning [{filename, result}] for every note under $FAKE_CURL_VAULT_DIR
+    # whose frontmatter defines that field.
+    #
+    # Narrow on purpose. A general JsonLogic evaluator in a test fixture would be
+    # a reimplementation of someone else's semantics, and the suite would end up
+    # verifying this file instead of the endpoint. The real endpoint's response
+    # shape was confirmed by hand against a live vault; what these tests cover is
+    # the script's handling of it.
+    case "$url" in
+      */search/*)
+        field="$(printf '%s' "$data" | sed -n 's/.*"frontmatter\.\([A-Za-z_][A-Za-z0-9_]*\)".*/\1/p')"
+        [ -n "${FAKE_CURL_VAULT_DIR:-}" ] && [ -n "$field" ] || { echo '[]'; exit 0; }
+        FIELD="$field" ROOT="$FAKE_CURL_VAULT_DIR" python3 - <<'PYEOF'
+import json, os, pathlib, re
+root, field = pathlib.Path(os.environ["ROOT"]), os.environ["FIELD"]
+out = []
+for f in sorted(root.rglob("*.md")):
+    t = f.read_text(errors="replace")
+    if not t.startswith("---\n"): continue
+    fm = t.split("---\n", 2)[1] if t.count("---\n") >= 2 else ""
+    # scalar: `field: value`
+    m = re.search(rf"(?m)^{re.escape(field)}:[ \t]*(.+)$", fm)
+    if m and m.group(1).strip():
+        out.append({"filename": str(f.relative_to(root)),
+                    "result": m.group(1).strip().strip('"')})
+        continue
+    # list of maps: `field:` then `  - path: ...` / `    lines: ...` / `    digest: ...`
+    m = re.search(rf"(?m)^{re.escape(field)}:[ \t]*$\n((?:[ \t]+.*\n)+)", fm)
+    if not m: continue
+    items, cur = [], None
+    for line in m.group(1).split("\n"):
+        kv = re.match(r"\s*-?\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if not kv: continue
+        k, v = kv.group(1), kv.group(2).strip().strip('"')
+        if line.lstrip().startswith("-"):
+            cur = {}; items.append(cur)
+        if cur is not None: cur[k] = v
+    if items: out.append({"filename": str(f.relative_to(root)), "result": items})
+print(json.dumps(out))
+PYEOF
+        exit 0
+        ;;
+    esac
     ;;
   PUT)
     put_status="${FAKE_CURL_PUT_STATUS:-200}"
