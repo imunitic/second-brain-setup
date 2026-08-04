@@ -174,6 +174,43 @@ across a subsystem genuinely has no focal span, and a node covering a whole modu
 required field with no honest answer is precisely how an invented one appears, so the format offers a
 way to say so.
 
+### Grounded summaries: evidence recorded as a checkable field
+
+The crux is unfabricable now, but the prose around it is not, and the prose is most of the node. A
+summary can state a mechanism that was false the day it was written — and because regeneration keeps
+every sentence a diff does not contradict, a claim that was never true survives every future patch
+untouched. There is nothing in a diff that can contradict it.
+
+So a summary points at its evidence. Any number of `<!-- grounded_in: path start-end -->` directives in
+the body name what the codebase asserts about itself, in preference order: a **test** (its name and
+assertions describe behaviour CI re-checks on every commit — the strongest evidence short of running
+the code), a **doc comment** (the author's own claim of intent), then plain reading. The writer records
+each as `path` + `lines` + sha256 **of the sliced text** in a `grounded_in` frontmatter list and strips
+the directives from the body: this is provenance, not display, and six groundings rendered as six code
+blocks would bury the prose a reader came for.
+
+Storing only the digest keeps the field small, avoids escaping multi-line code into YAML, and makes
+verification mechanical. Digesting the *slice* rather than the file is the point — a file changing
+elsewhere leaves the grounding intact, which is a far sharper signal than "N% of this node's lines
+moved". `synapse-query.sh grounding` re-slices every recorded range and compares:
+
+- **silence** — the evidence still says what it said, so nothing has undercut the prose;
+- **`grounding moved: path 1-2 -> 3-4`** — byte-identical text at a new offset, because something was
+  inserted above it. Mechanically fixable by re-pointing, no reading required;
+- **`grounding changed: path 1-2`** — the evidence itself is different. The claim resting on it needs a
+  look.
+
+That *moved*/*changed* split is what makes the check worth running. Without it, inserting one line near
+the top of a file would report every grounding below as broken, and a check that cries wolf is a check
+that gets ignored. A mismatch is a prompt to re-read one span, never proof the summary is wrong — the
+judgement stays with the model, the mechanics stay in the script.
+
+Two limits worth stating. Grounding is **partial by design**: architectural narrative and hard-won
+debugging findings have no test asserting them, so they cannot be cited and should not be watered down
+to become citable. And it is **node-level, not sentence-level** — a failed grounding says "something
+this node claims may have moved", not which sentence. Tying each grounding to its own claim is a
+possible refinement, not a current promise.
+
 ## What a session is told at startup
 
 The `SessionStart` hook injects two things, and neither is stored anywhere:

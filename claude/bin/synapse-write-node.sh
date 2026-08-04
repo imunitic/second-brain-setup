@@ -23,6 +23,15 @@
 # `crux_path`/`crux_lines` in frontmatter. The path must be one the node claims
 # and the range must be under 20 lines, or the write is refused.
 #
+# The body may also carry any number of grounding pointers — the evidence a
+# summary rests on, typically a doc comment or a test:
+#
+#   <!-- grounded_in: src/main/java/Foo.java 10-14 -->
+#
+# These are recorded in the `grounded_in` frontmatter list as path + lines +
+# sha256 of the sliced text, then stripped from the body: provenance, not
+# display. Same path and range checks as the crux, with a 40-line cap.
+#
 # Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 # need the network sandbox disabled, or curl fails with exit 7 and no message.
 #
@@ -289,6 +298,63 @@ if [[ -n "$crux_directive" ]]; then
     body_file="$work/body-expanded.md"
 fi
 
+# --- grounded_in: the evidence a summary rests on ---------------------------
+# `<!-- grounded_in: <path> <start>-<end> -->`, repeatable. Points at what the
+# codebase asserts about itself -- a doc comment, a test name, an assertion -- so
+# a summary can be traced instead of taken on faith. Provenance, not display:
+# these are recorded in frontmatter and stripped from the body, because six
+# groundings rendered as six code blocks would bury the prose a human came for.
+#
+# Only the digest of the sliced text is stored, never the text. That keeps the
+# field small, avoids escaping multi-line code into YAML, and makes verification
+# mechanical -- re-slice, re-hash, compare -- the same trick `sources_digest`
+# uses. Digesting the slice rather than the whole file is the point: a file
+# changing elsewhere leaves the grounding intact, which is a far sharper signal
+# than "N% of this node's lines moved".
+: > "$work/grounded.txt"
+if grep -qE '<!--[[:space:]]*grounded_in:' "$body_file"; then
+    grep -oE '<!--[[:space:]]*grounded_in:[^>]*-->' "$body_file" > "$work/g-directives.txt"
+    while IFS= read -r directive; do
+        arg="$(printf '%s' "$directive" \
+            | sed -E 's/^<!--[[:space:]]*grounded_in:[[:space:]]*//; s/[[:space:]]*-->$//')"
+        g_path="${arg%%[[:space:]]*}"
+        g_range="${arg##*[[:space:]]}"
+        g_range="${g_range//L/}"
+        g_start="${g_range%%-*}"
+        g_end="${g_range##*-}"
+        [[ "$g_path" != "$arg" && "$g_start" =~ ^[0-9]+$ && "$g_end" =~ ^[0-9]+$ ]] || {
+            echo "synapse-write-node: bad grounded_in directive: $directive" >&2
+            echo "  expected: <!-- grounded_in: path/to/file.ext 10-14 -->" >&2
+            exit 1
+        }
+        grep -qxF "$g_path" "$work/paths.txt" || {
+            echo "synapse-write-node: grounded_in path is not in this node's sources: $g_path" >&2
+            exit 1
+        }
+        [[ -f "$REPO_ROOT/$g_path" ]] || {
+            echo "synapse-write-node: grounded_in path does not exist: $g_path" >&2
+            exit 1
+        }
+        g_total="$(wc -l < "$REPO_ROOT/$g_path" | tr -d ' ')"
+        (( g_start >= 1 && g_end >= g_start && g_end <= g_total )) || {
+            echo "synapse-write-node: grounded_in range $g_start-$g_end outside $g_path (1-$g_total)" >&2
+            exit 1
+        }
+        # Roomier than the crux cap: a doc comment or a test body is legitimately
+        # longer than the few lines that carry a decision.
+        (( g_end - g_start < 40 )) || {
+            echo "synapse-write-node: grounded_in range $g_start-$g_end is $((g_end - g_start + 1)) lines; keep it under 40" >&2
+            exit 1
+        }
+        g_digest="$(sed -n "${g_start},${g_end}p" "$REPO_ROOT/$g_path" | sha256)"
+        printf '%s\t%s-%s\t%s\n' "$g_path" "$g_start" "$g_end" "$g_digest" >> "$work/grounded.txt"
+    done < "$work/g-directives.txt"
+    # Strip the directives: they are recorded above, and the body is for prose.
+    grep -vE '^[[:space:]]*<!--[[:space:]]*grounded_in:[^>]*-->[[:space:]]*$' "$body_file" \
+        | sed -E 's/<!--[[:space:]]*grounded_in:[^>]*-->//g' > "$work/body-grounded.md"
+    body_file="$work/body-grounded.md"
+fi
+
 built_at="$(date '+%Y-%m-%d %H:%M')"
 
 # --- assemble the note ------------------------------------------------------
@@ -318,6 +384,11 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
     if [[ -n "$crux_path" ]]; then
         printf 'crux_path: %s\n' "$crux_path"
         printf 'crux_lines: "%s"\n' "$crux_lines"
+    fi
+    if [[ -s "$work/grounded.txt" ]]; then
+        echo 'grounded_in:'
+        awk -F'\t' '{ printf "  - path: %s\n    lines: \"%s\"\n    digest: %s\n", $1, $2, $3 }' \
+            "$work/grounded.txt"
     fi
     echo '---'
     echo

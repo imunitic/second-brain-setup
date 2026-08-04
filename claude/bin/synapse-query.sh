@@ -12,6 +12,8 @@
 #   field   <node> <key>               one top-level frontmatter scalar
 #   stale                              nodes whose files no longer match, with a reason
 #   drift                              what changed since each node's recorded commit
+#   grounding                          nodes whose recorded evidence no longer matches
+#   grounding <node> --list            that node's groundings, as path<TAB>lines
 #
 # <node> may be given with or without the trailing `.md`.
 #
@@ -43,7 +45,7 @@ shift
 # run" (exit 1) for a typo'd subcommand just because Obsidian happens to be
 # down would send the caller looking in the wrong place entirely.
 case "$SUB" in
-  body|sources|field|stale|drift) ;;
+  body|sources|field|stale|drift|grounding) ;;
   -h|--help) usage 0 ;;
   *) usage ;;
 esac
@@ -127,6 +129,25 @@ fetch_node() { # fetch_node <node>
   case "$node" in *.md) ;; *) node="$node.md" ;; esac
   api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md" || return 1
   printf '%s' "$node"
+}
+
+# One parser for `grounded_in`, shared by the verifier and the --list path: two
+# implementations of one format is the drift this codebase keeps paying for.
+# Positional rather than a YAML library, like everything else here -- no
+# dependency beyond jq. Prints `path<TAB>lines<TAB>digest` per entry.
+extract_grounded_in() { # extract_grounded_in <node-file>
+  awk '
+    NR == 1 && $0 == "---" { fm = 1; next }
+    fm && $0 == "---" { exit }
+    !fm { next }
+    /^grounded_in:[[:space:]]*$/ { g = 1; next }
+    g && /^[^[:space:]]/ { g = 0 }
+    g && /^  - path:/ { p = $0; sub(/^  - path:[[:space:]]*/, "", p); next }
+    g && /^    lines:/ { l = $0; sub(/^    lines:[[:space:]]*/, "", l); gsub(/"/, "", l); next }
+    g && /^    digest:/ { d = $0; sub(/^    digest:[[:space:]]*/, "", d)
+                          if (p != "" && l != "" && d != "") print p "\t" l "\t" d
+                          p = ""; l = ""; d = ""; next }
+  ' "$1"
 }
 
 extract_source_paths() { # frontmatter `  - path: X` lines, in file order
@@ -448,6 +469,80 @@ cmd_drift() {
   cat "$WORK/found-nodes.txt"
 }
 
+# Verifies each node's `grounded_in` evidence: re-slice the recorded range and
+# compare its sha256 against the stored one. Silence means every grounding still
+# matches, so the prose resting on it has not been undercut.
+#
+# A pure line shift -- something inserted above the range -- would otherwise
+# report every grounding in the file as broken, which is the fastest way to make
+# a check worth ignoring. So a mismatch triggers a search for a same-length span
+# elsewhere in the file whose digest matches: found means `moved`, which is
+# mechanically fixable and needs no reading; not found means `changed`, which is
+# a claim to re-check. That distinction is the whole value of the subcommand.
+# Prints one node's recorded groundings as `path<TAB>lines`, so a regeneration can
+# rebuild the `<!-- grounded_in: ... -->` directives it needs to re-emit. Without
+# this the round trip loses them silently: they live in frontmatter, and `body`
+# returns prose, so writing a recovered body back would drop every grounding.
+cmd_grounding_list() { # cmd_grounding_list <node>
+  NODE="$(fetch_node "$1")" || exit 1
+  extract_grounded_in "$WORK/node.md" | cut -f1,2
+}
+
+cmd_grounding() {
+  if [ $# -eq 2 ] && [ "$2" = "--list" ]; then
+    cmd_grounding_list "$1"
+    return
+  fi
+  [ $# -eq 0 ] || usage
+  api_get_to "synapse/$REPO_NAME/_index.json" "$WORK/_index.json" || exit 1
+  jq -e . "$WORK/_index.json" >/dev/null 2>&1 || exit 1
+  jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
+    "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md" || continue
+
+    extract_grounded_in "$WORK/node.md" > "$WORK/grounded.txt"
+    [ -s "$WORK/grounded.txt" ] || continue
+
+    while IFS="$(printf '\t')" read -r g_path g_lines g_digest; do
+      [ -n "$g_path" ] || continue
+      if [ ! -f "$REPO_ROOT/$g_path" ]; then
+        printf '%s\tgrounding file gone: %s\n' "${node%.md}" "$g_path"
+        continue
+      fi
+      g_start="${g_lines%%-*}"
+      g_end="${g_lines##*-}"
+      actual="$(sed -n "${g_start},${g_end}p" "$REPO_ROOT/$g_path" | sha256)"
+      [ "$actual" = "$g_digest" ] && continue
+
+      # Slide a same-length window through the file, hashing each candidate span
+      # until one matches. O(lines) hashes in the worst case, but only for a
+      # grounding that already failed the direct check.
+      span=$((g_end - g_start + 1))
+      moved_to=""
+      total="$(wc -l < "$REPO_ROOT/$g_path" | tr -d ' ')"
+      s=1
+      while [ $((s + span - 1)) -le "$total" ]; do
+        if [ "$(sed -n "${s},$((s + span - 1))p" "$REPO_ROOT/$g_path" | sha256)" = "$g_digest" ]; then
+          moved_to="$s-$((s + span - 1))"
+          break
+        fi
+        s=$((s + 1))
+      done
+
+      if [ -n "$moved_to" ]; then
+        printf '%s\tgrounding moved: %s %s -> %s (re-point, no reading needed)\n' \
+          "${node%.md}" "$g_path" "$g_lines" "$moved_to"
+      else
+        printf '%s\tgrounding changed: %s %s (re-check the claim resting on it)\n' \
+          "${node%.md}" "$g_path" "$g_lines"
+      fi
+    done < "$WORK/grounded.txt"
+  done < "$WORK/nodes.txt"
+}
+
 
 # $SUB was validated above, so this needs no catch-all.
 case "$SUB" in
@@ -456,4 +551,5 @@ case "$SUB" in
   field)   cmd_field "$@" ;;
   stale)   cmd_stale "$@" ;;
   drift)   cmd_drift "$@" ;;
+  grounding) cmd_grounding "$@" ;;
 esac

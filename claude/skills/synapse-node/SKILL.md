@@ -114,6 +114,13 @@ needs one.
      pointer (`synapse-query.sh field "{Node}" crux_path` and `crux_lines`) when that file did not
      change; pick a fresh span when it did, because the old line numbers may now land somewhere else.
      `<!-- crux: none -->` if nothing focal remains — and a node with no `crux_path` had none already.
+   - **Re-emit the groundings, or they are lost.** `grounded_in` lives in frontmatter and the writer
+     strips its directives from the body, so a recovered body carries none of them: writing it back
+     without re-emitting drops the node's whole provenance silently. Recover the pointers with
+     `synapse-query.sh grounding "{Node}" --list` (prints `path<TAB>lines`) and put a
+     `<!-- grounded_in: <path> <lines> -->` back for each. Run `synapse-query.sh grounding` first: a
+     `moved` line gives you the corrected range to use, and a `changed` line marks evidence that no
+     longer says what the summary claims — re-point that one, and fix the sentence resting on it.
    - **Write it back with the script:**
 
      ```sh

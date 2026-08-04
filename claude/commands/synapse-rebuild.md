@@ -66,6 +66,7 @@ describes the checkout in front of you. Neither needs to be talked out of, or as
 
 ```sh
 ~/.claude/bin/synapse-query.sh drift
+~/.claude/bin/synapse-query.sh grounding
 ```
 
 Report what it says, in the human's terms, **before** touching anything: how far the baseline is from
@@ -153,6 +154,20 @@ change. If it did, the line numbers may now point at something else entirely —
 needing a fresh pointer, exactly as the prose needs a fresh sentence. A node with no `crux_path` had
 `none`, and stays that way.
 
+**The same applies to groundings, and forgetting them loses more.** `grounded_in` is frontmatter and
+its directives are stripped from the body, so a recovered body contains none — write it back as-is and
+the node's provenance is gone with no error. Recover the pointers per node:
+
+```sh
+~/.claude/bin/synapse-query.sh grounding "{Node}" --list   # path<TAB>lines
+```
+
+and re-emit a `<!-- grounded_in: <path> <lines> -->` for each. Run `synapse-query.sh grounding` before
+triaging: it is cheaper than the diff and sharper than a churn ratio. A **`moved`** line hands you the
+corrected range outright, no reading. A **`changed`** line points at evidence that no longer says what
+the summary claims — which is a better reason to re-read a node than any percentage, because it names
+the sentence at risk rather than the volume of change around it.
+
 **Reseat** — renames only, no content change. No reading at all. Recover the existing prose with
 `synapse-query.sh body "{Node}"`, drop its trailing `## Sources` block (the writer regenerates that),
 re-enumerate so the list holds the new paths, and write it back. Repeating this is safe: the writer
@@ -207,6 +222,7 @@ not merely stale, if the subsystem's shape differs on this line.
 ~/.claude/bin/synapse-build-project-index.sh
 ~/.claude/bin/synapse-query.sh drift     # expect silence
 ~/.claude/bin/synapse-query.sh stale     # expect silence
+~/.claude/bin/synapse-query.sh grounding # expect silence: re-pointed, not dropped
 ```
 
 Then the two checks nothing else performs: every `[[wikilink]]` in the namespace resolves to a file

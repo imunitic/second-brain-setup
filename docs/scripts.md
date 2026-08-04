@@ -116,6 +116,8 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
   field   <node> <key>               one top-level frontmatter scalar
   stale                              nodes whose files no longer match, with a reason
   drift                              what changed since each node's recorded commit
+  grounding                          nodes whose recorded evidence no longer matches
+  grounding <node> --list            that node's groundings, as path<TAB>lines
 
 <node> may be given with or without the trailing `.md`.
 
@@ -179,6 +181,15 @@ This script cuts the text out of the file, fences it with a language guessed
 from the extension, appends a `path:start-end` provenance line, and records
 `crux_path`/`crux_lines` in frontmatter. The path must be one the node claims
 and the range must be under 20 lines, or the write is refused.
+
+The body may also carry any number of grounding pointers — the evidence a
+summary rests on, typically a doc comment or a test:
+
+  <!-- grounded_in: src/main/java/Foo.java 10-14 -->
+
+These are recorded in the `grounded_in` frontmatter list as path + lines +
+sha256 of the sliced text, then stripped from the body: provenance, not
+display. Same path and range checks as the crux, with a 40-line cap.
 
 Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 need the network sandbox disabled, or curl fails with exit 7 and no message.

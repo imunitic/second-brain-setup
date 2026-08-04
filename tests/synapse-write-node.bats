@@ -606,3 +606,132 @@ make_crux_repo() {
   grep -qF 'let line05 = 999 (* CHANGED *)' "$(node_file Repointed)"
   ! grep -qxF 'let line05 = 5' "$(node_file Repointed)"
 }
+
+# --- grounded_in: the evidence a summary rests on ---------------------------
+# Provenance rather than display: recorded in frontmatter as path + lines +
+# digest of the slice, stripped from the body, and verifiable without the text.
+
+make_grounded_repo() {
+  make_repo
+  mkdir -p "$REPO/lib" "$REPO/test"
+  { printf '(* Computes the premium for a contract.\n'
+    printf '   Rounds half-up at two decimals. *)\n'
+    for i in $(seq 3 20); do printf 'let line%02d = %d\n' "$i" "$i"; done; } > "$REPO/lib/calc.ml"
+  { printf 'let test_rounds_half_up () = assert (round 1.005 = 1.01)\n'
+    printf 'let test_rejects_negative () = assert_raises Invalid_argument\n'; } > "$REPO/test/calc_test.ml"
+  git -C "$REPO" add lib/calc.ml test/calc_test.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m grounded
+  printf 'src/foo.ml\nlib/calc.ml\ntest/calc_test.ml\n' > "$PATHS"
+}
+
+# sha256 of a line range, computed independently of the script under test.
+slice_digest() { # slice_digest <path> <start> <end>
+  sed -n "$2,$3p" "$REPO/$1" | shasum -a 256 | cut -d' ' -f1
+}
+
+@test "grounded_in: records path, lines and a digest of the slice" {
+  make_grounded_repo
+  printf '## Summary\nRounds half-up.\n<!-- grounded_in: lib/calc.ml 1-2 -->\n' > "$BODY"
+
+  run run_write --title "Grounded" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  local f; f="$(node_file Grounded)"
+  grep -qxF 'grounded_in:' "$f"
+  grep -qxF '  - path: lib/calc.ml' "$f"
+  grep -qxF '    lines: "1-2"' "$f"
+  grep -qxF "    digest: $(slice_digest lib/calc.ml 1 2)" "$f"
+}
+
+@test "grounded_in: multiple groundings are all recorded" {
+  make_grounded_repo
+  { printf '## Summary\nRounds half-up, rejects negatives.\n'
+    printf '<!-- grounded_in: lib/calc.ml 1-2 -->\n'
+    printf '<!-- grounded_in: test/calc_test.ml 1-1 -->\n'
+    printf '<!-- grounded_in: test/calc_test.ml 2-2 -->\n'; } > "$BODY"
+
+  run run_write --title "Multi" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  # Count `lines:`, not `- path:`. Both `sources` and `grounded_in` are lists of
+  # `- path:` entries, so counting those conflates the two blocks -- `lines:` is
+  # emitted only by grounded_in.
+  [ "$(grep -c '^    lines: ' "$(node_file Multi)")" -eq 3 ]
+  grep -qxF '    lines: "2-2"' "$(node_file Multi)"
+}
+
+@test "grounded_in: directives are stripped from the body, not rendered" {
+  make_grounded_repo
+  printf '## Summary\nRounds half-up.\n<!-- grounded_in: lib/calc.ml 1-2 -->\n' > "$BODY"
+
+  run run_write --title "Stripped" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  local f; f="$(node_file Stripped)"
+  ! grep -qF '<!-- grounded_in:' "$f"
+  # the prose survives, and the grounding's own text is NOT pasted into the note
+  grep -qxF 'Rounds half-up.' "$f"
+  ! grep -qF 'Computes the premium for a contract' "$f"
+}
+
+@test "grounded_in: a digest over the slice, not the whole file" {
+  make_grounded_repo
+  printf '## Summary\nRounds half-up.\n<!-- grounded_in: lib/calc.ml 1-2 -->\n' > "$BODY"
+  run run_write --title "SliceOnly" --paths "$PATHS" --body "$BODY"
+  local before; before="$(grep '^    digest:' "$(node_file SliceOnly)")"
+
+  # Change the file well away from the grounded range.
+  printf 'let tail = 99\n' >> "$REPO/lib/calc.ml"
+  git -C "$REPO" add lib/calc.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m tail
+
+  run run_write --title "SliceOnly" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  # The whole-file hash in `sources` moved; the grounding digest must not.
+  [ "$(grep '^    digest:' "$(node_file SliceOnly)")" = "$before" ]
+}
+
+@test "grounded_in: a path outside the node's sources is refused" {
+  make_grounded_repo
+  printf 'let z = 1\n' > "$REPO/lib/other.ml"
+  git -C "$REPO" add lib/other.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m other
+  printf '## Summary\nX.\n<!-- grounded_in: lib/other.ml 1-1 -->\n' > "$BODY"
+
+  run run_write --title "Foreign2" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"grounded_in path is not in this node's sources"* ]]
+  [ ! -f "$(node_file Foreign2)" ]
+}
+
+@test "grounded_in: a bad range or malformed directive is refused" {
+  make_grounded_repo
+  printf '## Summary\nX.\n<!-- grounded_in: lib/calc.ml 900-901 -->\n' > "$BODY"
+  run run_write --title "BadRange" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"outside lib/calc.ml"* ]]
+
+  printf '## Summary\nX.\n<!-- grounded_in: lib/calc.ml -->\n' > "$BODY"
+  run run_write --title "BadForm" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"bad grounded_in directive"* ]]
+}
+
+@test "grounded_in: absent means no field, not an empty one" {
+  make_grounded_repo
+  printf '## Summary\nUngrounded prose.\n' > "$BODY"
+  run run_write --title "Ungrounded" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  ! grep -q '^grounded_in:' "$(node_file Ungrounded)"
+}
+
+@test "grounded_in: coexists with a crux directive" {
+  make_grounded_repo
+  { printf '## Summary\nRounds half-up.\n<!-- grounded_in: lib/calc.ml 1-2 -->\n\n'
+    printf '## Crux\n<!-- crux: lib/calc.ml 5-6 -->\n'; } > "$BODY"
+
+  run run_write --title "Both" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  local f; f="$(node_file Both)"
+  grep -qxF 'crux_path: lib/calc.ml' "$f"
+  grep -qxF '  - path: lib/calc.ml' "$f"
+  grep -qxF 'let line05 = 5' "$f"      # crux sliced and rendered
+  ! grep -qF 'Computes the premium' "$f"  # grounding not rendered
+}

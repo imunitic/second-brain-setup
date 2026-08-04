@@ -304,6 +304,31 @@ emit into tool calls than read into a window. Never hand-author those.
      rule saying "quote, don't compose" depends on compliance; pointing makes composing impossible,
      which is the same mechanics-are-scripts move as the rest of the write path.
 
+   - **Ground the summary in what the codebase asserts about itself.** Prefer, in this order: a test
+     (its name and assertions state behaviour that CI checks on every commit — the strongest evidence
+     short of running the code), a doc comment or module header (the author's own claim of intent), and
+     only then your own reading. Point at each piece of evidence, repeatably, anywhere in the body:
+
+     ```
+     <!-- grounded_in: src/test/java/PremiumTest.java 42-48 -->
+     <!-- grounded_in: src/main/java/Premium.java 10-14 -->
+     ```
+
+     The writer records each as path + lines + sha256 of the sliced text in the `grounded_in`
+     frontmatter list, then strips the directives — this is provenance, not display, so nothing is
+     rendered and the prose stays readable. `synapse-query.sh grounding` later re-slices each range and
+     compares, which turns "is this summary still true" from a judgement into a check.
+
+     Why it matters more than it looks: a claim traced to a test or a doc comment is one the codebase
+     made, so even a *wrong* doc comment beats an invented explanation — it is attributable and
+     findable. What this is guarding against is the confident causal story assembled from a stray
+     import ("output stays coherent because the printer is behind a mutex"), which reads exactly like
+     understanding and can be false from the moment it is written.
+
+     Not every sentence can be grounded, and that is expected. Architectural narrative and hard-won
+     debugging findings have no test asserting them. Ground what can be grounded; do not manufacture
+     evidence for the rest, and do not water down a true synthesis just to make it citable.
+
    - **`<!-- crux: none -->` is a real answer — use it.** A trivial data holder, a one-line
      delegation, or logic spread evenly with no focal point genuinely has no crux, and a subsystem
      node often has none either. A required field with no honest answer is exactly how a fabricated
