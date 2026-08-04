@@ -313,3 +313,145 @@ JSON
   [ "$status" -eq 0 ]
   grep -q "stale: true" "$VAULT/synapse/$(repo_name)/Foo Node.md"
 }
+
+# --- opportunistic correction ----------------------------------------------
+# The hook nudges only when the edit landed on evidence a node explicitly
+# cites, and only when that evidence stopped matching. Silence in every other
+# case is the design, not an omission: a nudge that fired on ordinary edits
+# would be tuned out within a day, and then the rare real one would be missed
+# with it.
+
+# A node citing lib/calc.ml both as its crux (lines 5-6, sliced into the body)
+# and as a grounding (lines 1-2, recorded as a digest).
+write_cited_node() { # write_cited_node <project> <node> <grounding-digest>
+  local project="$1" node="$2" gdigest="$3"
+  mkdir -p "$VAULT/synapse/$project"
+  cat > "$VAULT/synapse/$project/$node" <<EOF
+---
+title: "Cited"
+node_type: synapse-node
+project: $project
+sources:
+  - path: lib/calc.ml
+    hash: 1111111111111111111111111111111111111111
+sources_digest: "2222222222222222222222222222222222222222222222222222222222222222"
+stale: false
+built_at: "2026-08-03 16:15"
+crux_path: lib/calc.ml
+crux_lines: "5-6"
+grounded_in:
+  - path: lib/calc.ml
+    lines: "1-2"
+    digest: $gdigest
+---
+
+# Cited
+<!-- synapse:generated:start -->
+
+## Summary
+Rounds half-up at two decimals.
+
+## Crux
+\`\`\`ocaml
+let line05 = 5
+let line06 = 6
+\`\`\`
+— \`lib/calc.ml\`:5-6
+<!-- synapse:generated:end -->
+
+## Notes
+EOF
+}
+
+# calc.ml with a stable doc comment on 1-2 and numbered lines below.
+make_cited_repo() {
+  make_repo
+  mkdir -p "$REPO/lib"
+  { printf '(* Computes the premium.\n'
+    printf '   Rounds half-up. *)\n'
+    for i in $(seq 3 12); do printf 'let line%02d = %d\n' "$i" "$i"; done; } > "$REPO/lib/calc.ml"
+  git -C "$REPO" add lib/calc.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m calc
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  printf '{"lib/calc.ml":["Cited.md"],"_unassigned":[]}' > "$TEST_HOME/index-body.json"
+  write_cited_node "$(repo_name)" "Cited.md" \
+    "$(sed -n '1,2p' "$REPO/lib/calc.ml" | shasum -a 256 | cut -d' ' -f1)"
+}
+
+@test "correction: silent when the cited evidence still matches" {
+  make_cited_repo
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"additionalContext"* ]]
+  # the staleness flag is still written -- the nudge is additive, not a replacement
+  grep -q "synapse/$(repo_name)/Cited.md" "$CURL_CAPTURE/node-puts.log"
+}
+
+@test "correction: silent for an edit to a file the node cites nothing from" {
+  make_cited_repo
+  printf 'let other = 1\n' > "$REPO/lib/elsewhere.ml"
+  git -C "$REPO" add lib/elsewhere.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m e
+  printf '{"lib/elsewhere.ml":["Cited.md"],"_unassigned":[]}' > "$TEST_HOME/index-body.json"
+
+  run run_staleness_hook "$REPO/lib/elsewhere.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"additionalContext"* ]]
+}
+
+@test "correction: a changed grounding range produces a nudge naming the node" {
+  make_cited_repo
+  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]]
+  [[ "$output" == *"Cited"* ]]
+  [[ "$output" == *"grounding (lib/calc.ml:1-2)"* ]]
+}
+
+@test "correction: a changed crux range produces a nudge too" {
+  make_cited_repo
+  sed -i '' 's/^let line05 = 5$/let line05 = 999/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"crux (lib/calc.ml:5-6)"* ]]
+}
+
+@test "correction: the nudge tells the model to stay incidental" {
+  make_cited_repo
+  sed -i '' 's/   Rounds half-up. \*)/   Something else entirely. *)/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  # the guardrail is the point: without it this becomes an unbounded sweep
+  [[ "$output" == *"Keep it incidental"* ]]
+  [[ "$output" == *"do not start a sweep"* ]]
+  [[ "$output" == *"synapse-rebuild"* ]]
+}
+
+@test "correction: an already-stale node is still checked" {
+  make_cited_repo
+  # A node flagged stale earlier has had the LONGEST time to go wrong, so
+  # skipping it would hide the very case worth catching.
+  sed -i '' 's/^stale: false$/stale: true/' "$VAULT/synapse/$(repo_name)/Cited.md"
+  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"grounding (lib/calc.ml:1-2)"* ]]
+  # and no redundant PUT, since stale was already true
+  [ ! -f "$CURL_CAPTURE/node-puts.log" ] || \
+    ! grep -q "Cited.md" "$CURL_CAPTURE/node-puts.log"
+}
+
+@test "correction: emits valid JSON, so the harness can parse it" {
+  make_cited_repo
+  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "PostToolUse"' >/dev/null
+  printf '%s' "$output" | jq -e '.hookSpecificOutput.additionalContext | length > 0' >/dev/null
+}

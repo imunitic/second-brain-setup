@@ -379,7 +379,10 @@ write_fenced_node() {
   # call writes to the system temp dir whatever the caller asked for. Checked
   # statically because the resulting failure is environment-dependent: it passes
   # on Linux and on any macOS where the system temp dir happens to be writable.
-  run grep -nE 'mktemp( -d)?[[:space:]]*(\)|\||$)' "$REPO_ROOT"/claude/bin/*.sh
+  # Hooks as well as bin: the first version of this check globbed only claude/bin
+  # and missed a bare mktemp in synapse-staleness.sh for exactly that reason.
+  run grep -nE 'mktemp( -d)?[[:space:]]*(\)|\||$)' \
+    "$REPO_ROOT"/claude/bin/*.sh "$REPO_ROOT"/claude/hooks/*.sh
   if [ "$status" -eq 0 ]; then
     echo "bare mktemp (no template) found:"
     echo "$output"

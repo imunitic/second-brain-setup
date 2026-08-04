@@ -147,16 +147,94 @@ set_stale_true() {
   ' "$1"
 }
 
+# --- opportunistic correction --------------------------------------------
+# Flagging `stale: true` says "something under this node changed"; it never says
+# the prose is now wrong, and nothing ever goes back to check. This does, but
+# only where the edit landed on evidence the node explicitly cites: the file its
+# `crux` was sliced from, or a range it records in `grounded_in`. That narrowness
+# is the whole design. Nudging on any edit to any of a node's files would fire
+# constantly and be tuned out within a day; nudging only when cited evidence
+# actually stopped matching fires rarely and means something every time.
+#
+# It is also free: this is the one moment the model has certainly just read the
+# code, so no re-reading is asked for. Correctness accrues along the paths that
+# get worked in, and dormant subsystems stay as vague as they were -- which is
+# the right trade, since nobody is touching them.
+#
+# Kept dependency-free and self-contained, like the rest of this hook. The
+# grounded_in parser mirrors synapse-query.sh's extract_grounded_in; the tests
+# assert on the behaviour rather than the duplication.
+if command -v shasum >/dev/null; then
+  sha256() { shasum -a 256 | cut -d' ' -f1; }
+elif command -v sha256sum >/dev/null; then
+  sha256() { sha256sum | cut -d' ' -f1; }
+else
+  sha256() { echo unavailable; }
+fi
+
+FINDINGS="$(mktemp "${TMPDIR:-/tmp}/synapse-hook.XXXXXX")"
+trap 'rm -f "$FINDINGS"' EXIT
+
+# Reports cited evidence in the edited file that no longer matches what was
+# recorded. Silent when it still matches, and silent for a node that cites
+# nothing from this file at all.
+check_cited_evidence() { # check_cited_evidence <node-file> <node-name>
+  local nf="$1" name="${2%.md}" cpath clines cstart cend stored actual
+
+  cpath="$(grep -m1 '^crux_path:' "$nf" | sed -e 's/^crux_path: *//' || true)"
+  if [ "$cpath" = "$REL" ]; then
+    clines="$(grep -m1 '^crux_lines:' "$nf" | sed -e 's/^crux_lines: *//' -e 's/"//g' || true)"
+    cstart="${clines%%-*}"; cend="${clines##*-}"
+    if [ -n "$cstart" ] && [ -n "$cend" ]; then
+      # No digest is stored for the crux -- the sliced text lives in the note, so
+      # compare the note's own fenced copy against the file as it is now.
+      stored="$(awk '/^```/ { f = !f; next } f { print }' "$nf" | sha256)"
+      actual="$(sed -n "${cstart},${cend}p" "$FILE" | sha256)"
+      [ "$stored" = "$actual" ] || \
+        printf '%s\tcrux (%s:%s)\n' "$name" "$REL" "$clines" >> "$FINDINGS"
+    fi
+  fi
+
+  awk '
+    NR == 1 && $0 == "---" { fm = 1; next }
+    fm && $0 == "---" { exit }
+    !fm { next }
+    /^grounded_in:[[:space:]]*$/ { g = 1; next }
+    g && /^[^[:space:]]/ { g = 0 }
+    g && /^  - path:/ { p = $0; sub(/^  - path:[[:space:]]*/, "", p); next }
+    g && /^    lines:/ { l = $0; sub(/^    lines:[[:space:]]*/, "", l); gsub(/"/, "", l); next }
+    g && /^    digest:/ { d = $0; sub(/^    digest:[[:space:]]*/, "", d)
+                          if (p != "" && l != "" && d != "") print p "\t" l "\t" d
+                          p = ""; l = ""; d = ""; next }
+  ' "$nf" > "$nf.grounded" || true
+
+  while IFS="$(printf '\t')" read -r gp gl gd; do
+    [ "$gp" = "$REL" ] || continue
+    actual="$(sed -n "${gl%%-*},${gl##*-}p" "$FILE" | sha256)"
+    [ "$actual" = "$gd" ] || \
+      printf '%s\tgrounding (%s:%s)\n' "$name" "$REL" "$gl" >> "$FINDINGS"
+  done < "$nf.grounded"
+  rm -f "$nf.grounded"
+}
+
 while IFS= read -r node; do
   [ -n "$node" ] || continue
   NODE_URL="$BASE/vault/$(urlencode_path "synapse/$REPO_NAME/$node")"
 
-  ORIG="$(mktemp)"; NEXT="$(mktemp)"
+  # Explicit templates: macOS `mktemp` with no template ignores TMPDIR.
+  ORIG="$(mktemp "${TMPDIR:-/tmp}/synapse-hook.XXXXXX")"
+  NEXT="$(mktemp "${TMPDIR:-/tmp}/synapse-hook.XXXXXX")"
   if ! curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
         -H "Accept: text/markdown" -o "$ORIG" "$NODE_URL"; then
     rm -f "$ORIG" "$NEXT"
     continue
   fi
+
+  # Before the staleness write, and regardless of whether it happens: a node
+  # that is already flagged stale can still be citing evidence this edit just
+  # invalidated, and skipping the check there would hide exactly the case where
+  # the prose has had the longest to go wrong.
+  check_cited_evidence "$ORIG" "$node"
 
   set_stale_true "$ORIG" > "$NEXT"
 
@@ -171,3 +249,25 @@ while IFS= read -r node; do
     -X PUT -H "Content-Type: text/markdown" --data-binary "@$NEXT" "$NODE_URL"
   rm -f "$ORIG" "$NEXT"
 done <<< "$NODES"
+
+# Nothing to say unless cited evidence actually stopped matching. Silence is the
+# common case by design -- an edit to a file a node merely covers gets flagged
+# stale and produces no output at all.
+[ -s "$FINDINGS" ] || exit 0
+
+# `additionalContext` rather than `decision: block`: this is information for the
+# next turn, not a reason to stop. Same shape as second-brain-stop-nudge.sh.
+jq -Rn --rawfile findings "$FINDINGS" '
+  ($findings | rtrimstr("\n") | split("\n")
+    | map(split("\t") | "  - " + .[0] + " — " + .[1]) | join("\n")) as $list
+  | {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: (
+          "You just edited a file that these Synapse nodes cite as evidence, and the cited range no longer matches what was recorded:\n"
+          + $list
+          + "\n\nYou have the code in front of you right now, so checking is nearly free — this is the one moment correcting a node costs nothing extra. If a sentence in the node is now wrong, fix that sentence and re-point the evidence, following the synapse-node skill: recover the prose with `synapse-query.sh body`, re-emit the crux and grounded_in directives, and write it back with synapse-write-node.sh.\n\n"
+          + "Keep it incidental. Correct only what this edit actually contradicts. Do NOT re-read the node'"'"'s other sources, do not verify its remaining claims, and do not start a sweep — that is /synapse-rebuild'"'"'s job, and turning this into one is how a cheap habit becomes an expensive one. If the prose still holds despite the range moving, just re-point it and move on."
+        )
+      }
+    }'

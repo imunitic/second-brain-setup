@@ -211,6 +211,37 @@ to become citable. And it is **node-level, not sentence-level** — a failed gro
 this node claims may have moved", not which sentence. Tying each grounding to its own claim is a
 possible refinement, not a current promise.
 
+### Opportunistic correction: the graph self-heals where work happens
+
+Grounding makes a summary's evidence checkable, but something still has to go and check. Running
+`grounding` over a whole namespace is a deliberate act nobody performs weekly, so the interesting
+question is where a check can be had for free.
+
+There is exactly one such moment: the `PostToolUse` hook. It already fires on every
+`Write`/`Edit`/`MultiEdit`, already resolves which nodes claim the edited file, and it is the one point
+where the model has *certainly just read that code*. So beyond flagging `stale: true`, the hook
+re-verifies any evidence those nodes cite **in the file just edited** — the range its `crux` was sliced
+from, and any `grounded_in` entry pointing there. If the cited range still matches, nothing is said. If
+it stopped matching, the hook returns a nudge naming the node and the evidence, and asks for the one
+sentence the edit contradicts to be fixed.
+
+The narrowness is the design, not a limitation. Nudging on any edit to any of a node's files would fire
+on nearly every edit in a repo of any size and be tuned out within a day — and the rare meaningful one
+would go with it. Nudging only when explicitly cited evidence stopped matching fires rarely and means
+something every time. Two consequences follow: the check costs nothing extra, since no re-reading is
+requested; and correctness accrues along the paths actually being worked in, while dormant subsystems
+stay exactly as vague as they were. That is the right trade — nobody is reading those nodes either.
+
+The nudge carries its own guardrail, because the failure mode is obvious: correct only what this edit
+contradicts, never re-read the node's other sources, never verify its remaining claims, never start a
+sweep. A sweep is `/synapse-rebuild`'s job, and turning a free habit into an expensive one is how it
+would stop being worth having. A node already flagged `stale` is still checked — it has had the longest
+to go wrong, so skipping it would hide the very case worth catching.
+
+This also changes what the two-tier model is for. Tier 1 was pure bookkeeping: "something under this
+node changed". It now additionally answers, for the narrow slice it can, "and here is a claim that may
+no longer hold" — which is the only part of a node the tiers previously had no opinion about at all.
+
 ## What a session is told at startup
 
 The `SessionStart` hook injects two things, and neither is stored anywhere:
@@ -235,8 +266,11 @@ node, which is what `synapse-query.sh drift` is for — see "Drift" below.
 Resolves the repo root **from the edited file's own directory**, not the session's cwd, so a session
 spanning several repos flags the right namespace in each. Looks the edited path up in that repo's
 `_index.json`: if it belongs to one or more nodes, rewrites each one's `stale:` line to `true`; if
-it's not in the index at all, appends it to `_unassigned` instead. No hashing here — the hook already
-knows with certainty which file just changed, so this tier is pure bookkeeping, not verification.
+it's not in the index at all, appends it to `_unassigned` instead. No hashing of the node's `sources`
+here — the hook already knows with certainty which file just changed, so the flagging half is pure
+bookkeeping, not verification. It does hash one narrow thing: any `crux` or `grounded_in` range those
+nodes cite **in this file**, so an edit that invalidates cited evidence returns a correction nudge. See
+"Opportunistic correction" above for why that slice and no wider.
 
 The hook also refuses to write when the namespace's `remote:` doesn't match the repo's, using the same origin → first-listed-remote → repo-root resolution the SessionStart hook and `synapse-query.sh` use. A namespace with no readable `remote:` counts as a mismatch, not a match on the empty string: absent provenance is not permission to write. All three components must resolve the remote identically, or one refuses where another proceeds.
 
