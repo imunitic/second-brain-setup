@@ -1,5 +1,7 @@
 # Synapse
 
+[![tests](https://github.com/imunitic/synapse/actions/workflows/tests.yml/badge.svg)](https://github.com/imunitic/synapse/actions/workflows/tests.yml)
+
 Memory for Claude Code: durable notes that outlive a session, and a per-repo code graph so a
 codebase does not get re-explored from scratch every time. Three components, independent enough that
 you can use one without the others:
