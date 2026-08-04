@@ -356,3 +356,33 @@ write_fenced_node() {
   run run_query
   [ "$status" -eq 2 ]
 }
+
+# --- temp-dir handling -----------------------------------------------------
+
+@test "an unusable TMPDIR is fatal rather than resolving every path against /" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  # This script runs without `set -e` on purpose -- its exit codes are answers,
+  # not failures -- so a failed `mktemp -d` left $WORK empty and every path
+  # under it resolving against `/`. Found by running the script for real outside
+  # the suite, in a sandbox whose TMPDIR was not the system temp dir.
+  run env TMPDIR="$TEST_HOME/definitely-not-here" \
+    PATH="$FAKE_BIN:$PATH" FAKE_CURL_LOG="$CURL_LOG" FAKE_CURL_VAULT_DIR="$VAULT" \
+    bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$QUERY" stale
+  [ "$status" -ne 0 ]
+}
+
+@test "every mktemp in the shipped scripts passes an explicit template" {
+  # macOS `mktemp`/`mktemp -d` ignore TMPDIR unless given a template, so a bare
+  # call writes to the system temp dir whatever the caller asked for. Checked
+  # statically because the resulting failure is environment-dependent: it passes
+  # on Linux and on any macOS where the system temp dir happens to be writable.
+  run grep -nE 'mktemp( -d)?[[:space:]]*(\)|\||$)' "$REPO_ROOT"/claude/bin/*.sh
+  if [ "$status" -eq 0 ]; then
+    echo "bare mktemp (no template) found:"
+    echo "$output"
+    false
+  fi
+}

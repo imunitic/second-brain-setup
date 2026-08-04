@@ -103,8 +103,29 @@ covering 15,000 files where 12 changed already has prose encoding the other 14,9
 is the expensive mistake this command exists to avoid, and it also throws away hard-won findings the
 diff has nothing to say about.
 
-Get each node's size with `synapse-query.sh sources "{Node}" --count` and compare it against the
-counts drift printed. Then pick one of three strategies and **say which one you picked and why**:
+**Take the nodes that lost files first, and keep the full list of deleted paths in front of you for
+every node after that.** A deletion in one node is routinely the other half of an addition in
+another — a type moved from the binary into a library, a module promoted out of a `util`. Triaged in
+drift's arbitrary order, the node that *gained* the file is patched first, with no way to know the
+file came from anywhere, and the patch fills the gap with a guess. One cheap list, read once:
+
+```sh
+git diff --diff-filter=D --name-only -M <commit>..HEAD
+```
+
+**Size each node by changed lines, not by changed files.** Drift reports file counts because that is
+what it can compute without a diff, but a file count saturates immediately in a repo of small
+modules: a node of 9 files with 5 touched reads as 56% when the actual change is 199 lines out of
+2,077, and every one of them a formatting or import edit. Get the real ratio before choosing:
+
+```sh
+git diff --numstat <commit>..HEAD -- $(tr '\n' ' ' < "$W/lists/NN.txt") \
+  | awk '{a += $1; d += $2} END {print a + d}'
+```
+
+against the node's own line count, and use `synapse-query.sh sources "{Node}" --count` for the file
+count drift's numbers are relative to. Then pick one of three strategies and **say which one you
+picked and why**:
 
 **Reseat** — renames only, no content change. No reading at all. Recover the existing prose with
 `synapse-query.sh body "{Node}"`, drop its trailing `## Sources` block (the writer regenerates that),
@@ -114,7 +135,7 @@ padding each time. The concept did not change; only paths moved. This also
 works on a machine that never built the namespace, because the body came from the node itself rather
 than from a work-dir file.
 
-**Patch from the diff** — a small fraction of the node's files changed (rule of thumb: under ~10%),
+**Patch from the diff** — a small fraction of the node's *lines* changed (rule of thumb: under ~15%),
 and the file its `crux` quotes still exists. Read three things and nothing else:
 
 1. the current prose — `synapse-query.sh body "{Node}"`;
@@ -122,6 +143,14 @@ and the file its `crux` quotes still exists. Read three things and nothing else:
 3. hunks for a **bounded** selection of those files — always including any file the `crux` quotes.
 
 Then amend only the sentences the diff contradicts, and keep everything else verbatim.
+
+**A patch may say what the node now contains. It must not say where something came from** unless the
+rename is in the diff it read. Provenance is the one claim a node-restricted diff structurally cannot
+support: the other end of the move is in a different node's paths, so the diff shows an unexplained
+new file, and the plausible local origin is an invention. `git`'s rename detection is not a
+safety net here — a file that moved between modules and was rewritten on the way lands below the
+similarity threshold and shows up as a delete in one node and an add in another even under
+`-M --find-copies-harder`. Which is why deletions get read first, below.
 
 **Re-orient** — a large fraction changed, the baseline is unusable, or there is a structural signal:
 the `crux` file is gone or renamed, whole modules entered or left the node, or a package root changed
@@ -170,6 +199,15 @@ is indistinguishable, from the outside, from one that did nothing.
   this command describes and records it. Report how far behind the upstream ref is and stop there.
 - **Never re-read a node's full sources to patch a small diff.** That is the specific waste this
   command is built to avoid.
+- **Know what patching cannot fix.** It keeps every sentence the diff does not contradict, so a claim
+  that was wrong when the node was *built* survives every future patch untouched — the diff has
+  nothing to say about a statement that was never true. Patching is therefore only as good as the
+  baseline prose, and a node's most likely error is not drift but an explanation invented at build
+  time. Two things follow. A `crux` that is a **verbatim quote** is the one part of a node that can be
+  checked mechanically against the source, so a paraphrased crux forfeits the only cheap correctness
+  check the format has. And a sentence asserting a *mechanism* ("X is behind a mutex, which is why Y")
+  deserves more suspicion than one asserting structure — if the diff touches its file at all, verify
+  it rather than carrying it over.
 - **Never write a node with an empty path list**, and never delete a node whose sources vanished — its
   `## Notes` is human-authored and outside the generated fence.
 - **Never hand-write frontmatter or the `## Sources` mirror.** `synapse-write-node.sh` owns them; doing

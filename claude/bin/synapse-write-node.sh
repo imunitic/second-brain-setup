@@ -176,7 +176,7 @@ node_commit="$(git -C "$REPO_ROOT" rev-parse --verify --quiet HEAD || true)"
 # elsewhere in the repo.
 if [[ -n "$node_commit" ]]; then
     (cd "$REPO_ROOT" && git diff --name-only HEAD) | LC_ALL=C sort > "$work/dirty.txt"
-    dirty_sources="$(comm -12 "$work/dirty.txt" "$work/paths.txt" | head -3 | tr '\n' ' ')"
+    dirty_sources="$(LC_ALL=C comm -12 "$work/dirty.txt" "$work/paths.txt" | head -3 | tr '\n' ' ')"
     if [[ -n "$dirty_sources" ]]; then
         echo "synapse-write-node: NOTE uncommitted changes in this node's sources: ${dirty_sources% }" >&2
         echo "  commit: $node_commit records what was checked out, not a faithful drift baseline" >&2

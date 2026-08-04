@@ -285,6 +285,18 @@ emit into tool calls than read into a window. Never hand-author those.
      Obsidian wikilinks to other nodes in this same namespace: `depends_on`, `part_of`, `uses`, or
      another type that fits better if one doesn't), a `## Sources` section, and an empty `## Notes`
      section.
+   - **The `crux` must be copied, never composed.** A paraphrase that merely looks like code
+     (`trait Matcher { /* no engine assumptions */ }`) reads fine and is worth nothing: the crux is
+     the only field in a node that can be checked against the source mechanically, and inventing it
+     forfeits that for the node's whole lifetime. If no short passage carries the logic, quote the
+     module's own doc comment instead of writing a plausible-looking substitute — an honest quote of
+     something adjacent beats a fabricated quote of the thing itself.
+   - **Prefer claims about structure over claims about mechanism.** "These three printers implement
+     the sink interface" is checkable and stays true; "the parallel path shares a printer behind a
+     mutex, which is why output stays coherent" is the kind of causal story that is easy to assemble
+     from a stray `use std::sync::Mutex` and wrong. Every later regeneration keeps the sentences the
+     diff does not contradict, so a mechanism invented here is permanent. State one only after
+     reading the code that implements it.
    - **`## Sources` is the human mirror of `sources`, aggregated rather than enumerated:** one line
      per owning directory or module with a file count, `LC_ALL=C` sorted. A node covering 941 files
      would otherwise put 75 KB of paths in front of a reader who wants to know which modules are

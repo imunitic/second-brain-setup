@@ -65,7 +65,8 @@ TS_CONFIG="$HOME/.config/tree-sitter/config.json"
 REPOS_PARENT="$GRAMMARS_DIR/repos"
 ALREADY_REGISTERED="$(jq -r --arg d "$REPOS_PARENT" '(."parser-directories" // []) | index($d) != null' "$TS_CONFIG" 2>/dev/null)"
 if [ "$ALREADY_REGISTERED" != "true" ]; then
-  TMP="$(mktemp)"
+  # Explicit template: macOS `mktemp` with no template ignores TMPDIR.
+  TMP="$(mktemp "${TMPDIR:-/tmp}/synapse-tags.XXXXXX")"
   jq --arg d "$REPOS_PARENT" '."parser-directories" = ((."parser-directories" // []) + [$d] | unique)' "$TS_CONFIG" > "$TMP" 2>/dev/null && mv "$TMP" "$TS_CONFIG"
 fi
 

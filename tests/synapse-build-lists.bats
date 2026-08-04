@@ -237,6 +237,37 @@ make_mixed_repo() {
   [ "$(wc -l < "$WORK/unassigned.txt" | tr -d ' ')" -eq "$((enumerated - 3))" ]
 }
 
+@test "coverage is correct when the repo has uppercase filenames" {
+  make_repo
+  # The trigger: uppercase root files sort before lowercase directories in C but not
+  # in en_US.UTF-8, and `comm` validates order against the *ambient* collation. With
+  # the locale unpinned it silently reports every line as unique, so coverage claimed
+  # nothing was covered -- no warning, just wrong numbers. Almost every open-source
+  # repo has README.md, so this is the common case rather than an edge one.
+  mkdir -p "$REPO/crates/thing"
+  printf 'fn main() {}\n' > "$REPO/crates/thing/lib.rs"
+  printf 'fn t() {}\n' > "$REPO/crates/thing/util.rs"
+  printf '# readme\n' > "$REPO/README.md"
+  printf '# faq\n' > "$REPO/FAQ.md"
+  printf 'MIT\n' > "$REPO/LICENSE-MIT"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m uppercase
+  write_manifest 'Crates\t^crates/\t\n'
+
+  run env LANG=en_US.UTF-8 SYNAPSE_WORK_DIR="$WORK" \
+    bash -c 'cd "$1" && shift && unset LC_ALL && bash "$@"' _ "$REPO" "$BUILD_LISTS"
+  [ "$status" -eq 0 ]
+
+  local enumerated
+  enumerated="$(wc -l < "$WORK/all.txt" | tr -d ' ')"
+  [[ "$output" == *"covered:    2"* ]]
+  [[ "$output" == *"unassigned: $((enumerated - 2))"* ]]
+  # The arithmetic has to add up, which is what silently failed before.
+  [ "$(wc -l < "$WORK/unassigned.txt" | tr -d ' ')" -eq "$((enumerated - 2))" ]
+  grep -qxF 'README.md' "$WORK/unassigned.txt"
+  ! grep -qxF 'crates/thing/lib.rs' "$WORK/unassigned.txt"
+}
+
 @test "a pattern that matches nothing yields an empty list rather than failing" {
   make_mixed_repo
   # The real slip this guards: `config$` looks like "the config directory" but

@@ -108,7 +108,12 @@ done < "$MANIFEST"
 echo "--- coverage"
 cat "$LISTS"/*.txt | LC_ALL=C sort -u > "$WORK_DIR/covered.txt"
 LC_ALL=C sort "$ALL" > "$WORK_DIR/all-sorted.txt"
-comm -23 "$WORK_DIR/all-sorted.txt" "$WORK_DIR/covered.txt" > "$WORK_DIR/unassigned.txt"
+# LC_ALL=C on comm as well as on the sorts. comm verifies its inputs against the
+# *ambient* collation, and under a UTF-8 locale it silently reports every line as
+# unique once uppercase filenames are involved (README.md sorts before crates/ in C
+# but not in en_US.UTF-8) -- which would make the coverage report claim nothing is
+# covered, with no warning at all.
+LC_ALL=C comm -23 "$WORK_DIR/all-sorted.txt" "$WORK_DIR/covered.txt" > "$WORK_DIR/unassigned.txt"
 printf 'enumerated: %s\ncovered:    %s\nunassigned: %s\n' \
     "$(wc -l < "$WORK_DIR/all-sorted.txt" | tr -d ' ')" \
     "$(wc -l < "$WORK_DIR/covered.txt" | tr -d ' ')" \

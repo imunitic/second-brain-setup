@@ -106,7 +106,11 @@ api_get_to() { # api_get_to <vault-path> <dest-file>
     -H "Accept: text/markdown" -o "$2" "$BASE/vault/$(urlencode_path "$1")"
 }
 
-WORK="$(mktemp -d)"
+# Explicit template: macOS `mktemp -d` with no template ignores TMPDIR. And this
+# script runs without `set -e`, so a failure here would otherwise leave WORK empty
+# and every path below resolving against `/`.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/synapse-query.XXXXXX")" || exit 1
+[ -n "$WORK" ] && [ -d "$WORK" ] || exit 1
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -291,7 +295,10 @@ frontmatter_field() { # frontmatter_field <file> <key>
 
 # Both inputs must be LC_ALL=C sorted: this is an intersection, not a scan per path.
 count_intersect() { # count_intersect <sorted-node-paths> <sorted-changed-paths>
-  comm -12 "$1" "$2" | grep -c . || true
+  # LC_ALL=C on comm too, not just on the sorts that produced these files: comm
+  # checks order in the ambient collation and silently returns nothing in common
+  # when a UTF-8 locale disagrees with C about case.
+  LC_ALL=C comm -12 "$1" "$2" | grep -c . || true
 }
 
 cmd_drift() {
@@ -380,7 +387,7 @@ cmd_drift() {
   cat "$WORK"/diff-*.add 2>/dev/null | LC_ALL=C sort -u > "$WORK/added.txt"
   if [ -s "$WORK/added.txt" ]; then
     jq -r 'keys[]' "$WORK/_index.json" | LC_ALL=C sort > "$WORK/claimed.txt"
-    comm -23 "$WORK/added.txt" "$WORK/claimed.txt" > "$WORK/unclaimed.txt"
+    LC_ALL=C comm -23 "$WORK/added.txt" "$WORK/claimed.txt" > "$WORK/unclaimed.txt"
     if [ -s "$WORK/unclaimed.txt" ]; then
       MANIFEST=""
       if api_get_to "synapse/$REPO_NAME/_manifest.tsv" "$WORK/manifest.tsv"; then

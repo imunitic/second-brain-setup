@@ -10,7 +10,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAKE_BIN="$REPO_ROOT/tests/fixtures/fake-bin"
 
 common_setup() {
-  TEST_HOME="$(mktemp -d)"
+  # Explicit template for the same reason the shipped scripts use one: macOS
+  # `mktemp -d` with no template ignores TMPDIR, so the suite could not run at
+  # all anywhere the system temp dir is not writable.
+  TEST_HOME="$(mktemp -d "${TMPDIR:-/tmp}/synapse-test.XXXXXX")"
   VAULT="$TEST_HOME/vault"
   REPO="$TEST_HOME/repo"
   mkdir -p "$TEST_HOME/.claude" "$VAULT"
