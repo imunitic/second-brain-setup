@@ -201,6 +201,13 @@ silently incomplete while `stale` prints nothing at all. Renames have a softer v
 problem — `stale` can only call a renamed file "gone", when in fact the concept is unchanged and only
 the path moved.
 
+The blind spot is widest for changes that did not come through this session, which is most of them.
+Tier 1 fires on `Write`/`Edit`/`MultiEdit` and therefore never sees an IDE refactor, a colleague's
+commits arriving by `pull`, a session on another machine, or generated code that the build rewrote from
+a schema or a resource definition — no human or model edited those files at all. An IDE "move class"
+refactor is the sharpest case, because it produces precisely the two classes the tiers handle worst: a
+rename reported as a deletion, and new paths reported not at all.
+
 `synapse-query.sh drift` closes both. Each node records the `commit` it was built from, so drift asks
 `git diff --name-status -M <commit>..HEAD` and classifies the result: content changed, renamed
 (*reseat sources, prose may still hold* — the one class fixable without re-authoring), gone, or added.

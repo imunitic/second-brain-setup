@@ -17,6 +17,15 @@ Manually, when you already expect major drift:
   line, and a large fraction of nodes will be flagged at once.
 - **A long absence** — weeks or months of other people's commits landed while you were elsewhere.
 - **A large merge or rebase** landing in your checkout.
+- **You wrote a lot of code by hand.** The plainest case and probably the most common: days of ordinary
+  work in your own branch, in your own editor, with no model involved. Tier 1 only fires on
+  `Write`/`Edit`/`MultiEdit` *in this session*, so none of it was flagged as it happened. `stale` will
+  still catch content changes to files a node already claims — but it reports a rename as "gone", and a
+  **newly added file it cannot see at all**, because a path in no node's `sources` has nothing to
+  compare against. Real feature work adds files, so this is exactly where the graph goes quietly out of
+  date. Same applies to anything else that bypasses the session: an IDE refactor (which produces both
+  bad cases at once — renames *and* new paths), a `sed -i`, generated code that the build rewrote from a
+  schema, a dependency bump, or a moved submodule pointer.
 
 Do **not** run it after an ordinary pull. Tier 1 flags what this session edited, the `synapse-node`
 skill regenerates a node lazily when its body is actually needed, and `synapse-query.sh drift` is the
