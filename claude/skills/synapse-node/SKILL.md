@@ -88,10 +88,21 @@ needs one.
      return what the node already claims.
    - Consult `synapse/{project}/_profile.txt` if it exists — the aggregations that proved useful for
      this repo, and the negative results (searches that came back empty) worth not re-deriving.
-   - For the files that matter, try `~/.claude/bin/synapse-tags.sh {path}` first (exit 0 use the tags,
-     exit 1 fall back to reading the file, exit 2 run the discovery procedure `/synapse-init`
-     documents, then retry). Then read the load-bearing files in full — the tags signal informs
-     regrouping, it never substitutes for reading a file before rewriting its prose.
+   - **Prefer patching the prose from the diff over re-reading the node's sources.** If the node has a
+     `commit` and only a small fraction of its files changed, read the current prose
+     (`synapse-query.sh body`), get `git diff --name-status -M <commit>..HEAD` for its paths, and read
+     hunks only for a bounded selection — always including whatever file the `crux` quotes. Amend the
+     sentences the diff contradicts and keep the rest verbatim. A node covering 15,000 files where 12
+     changed already has prose encoding the other 14,988, and re-reading them all both costs enormously
+     and discards findings the diff has nothing to say about. Project the diff as carefully as
+     `sources`: names first, `--stat` to size it, hunks only for the selection.
+   - Fall back to reading the files when patching cannot be justified — a large fraction changed, the
+     `crux` file is gone, or the baseline is unusable. Then try `~/.claude/bin/synapse-tags.sh {path}`
+     first (exit 0 use the tags, exit 1 fall back to reading the file, exit 2 run the discovery
+     procedure `/synapse-init` documents, then retry), and read the load-bearing files in full — the
+     tags signal informs regrouping, it never substitutes for reading a file before rewriting its prose.
+     If this is happening across many nodes at once, stop and run `/synapse-rebuild` instead: that is
+     the instrument for major drift, and it triages node by node rather than paying full cost for each.
    - Re-author `## Summary`, `## Crux` and `## Links` to match what the files contain now, into
      `$W/body.md`. Re-check the node's one-line `summary` as well; keep the existing one with
      `synapse-query.sh field "{Node title}" summary` if it still fits.

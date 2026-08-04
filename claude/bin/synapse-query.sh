@@ -358,9 +358,23 @@ cmd_drift() {
     awk -F'\t' '$1 ~ /^D/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.del"
     awk -F'\t' '$1 ~ /^R/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.ren"
     awk -F'\t' '$1 ~ /^A/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.add"
-    COMMITS="$(git -C "$REPO_ROOT" rev-list --count "$base..HEAD" 2>/dev/null || echo 0)"
-    [ "$COMMITS" -gt 0 ] && printf '(repo)\t%s commits since baseline %s\n' \
-      "$COMMITS" "$(printf '%s' "$base" | cut -c1-12)"
+    # `rev-list --count base..HEAD` counts only one direction, which lies on a
+    # divergent line: after switching to an older release branch it reports the few
+    # commits unique to that branch and stays silent about the hundreds the baseline
+    # has that HEAD does not. `--left-right --count base...HEAD` gives both.
+    SHORT="$(printf '%s' "$base" | cut -c1-12)"
+    LR="$(git -C "$REPO_ROOT" rev-list --left-right --count "$base...HEAD" 2>/dev/null || echo '0	0')"
+    ONLY_BASE="$(printf '%s' "$LR" | cut -f1)"
+    ONLY_HEAD="$(printf '%s' "$LR" | cut -f2)"
+    if git -C "$REPO_ROOT" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
+      [ "$ONLY_HEAD" -gt 0 ] && printf '(repo)\t%s commits since baseline %s\n' "$ONLY_HEAD" "$SHORT"
+    else
+      # Not an ancestor: a branch switch, a rebase, or a reset. The tree diff below
+      # is still exactly right -- it compares file contents, not history -- but the
+      # graph was built against a line this checkout is not on, so say so.
+      printf '(repo)\tbaseline %s is not an ancestor of HEAD: %s commits only on the baseline, %s only here -- the graph describes a different line\n' \
+        "$SHORT" "$ONLY_BASE" "$ONLY_HEAD"
+    fi
   done < <(LC_ALL=C sort -u "$WORK/baselines.txt")
 
   while IFS=$'\t' read -r node base; do

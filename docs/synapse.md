@@ -225,6 +225,37 @@ Because `git hash-object` fingerprints the worktree rather than the commit, a no
 dirty tree has an approximate baseline — the writer warns at the time, narrowly, on that node's own
 sources.
 
+### `/synapse-rebuild`: repair, and the diff-driven rule
+
+Detection is cheap; repair is not, so the two are separate commands. `/synapse-rebuild` is invoked by a
+human when major drift is already expected — a branch switch, a long absence, a large merge — and its
+central rule is that **new prose is computed from the diff, never by re-reading a node's sources.** A
+node covering 15,000 files where 12 changed already has prose encoding the other 14,988; re-reading
+them costs enormously and discards findings the diff has nothing to say about.
+
+That turns repair into a triage rather than a rebuild. Per flagged node:
+
+- **Reseat** — renames only. Recover the prose from the node's own fenced region, swap in the new paths,
+  read nothing. Works even on a machine that never built the namespace.
+- **Patch from the diff** — a small fraction changed and the `crux` file still exists. Read the current
+  prose, the `--name-status` for its changed paths, and hunks for a bounded selection; amend only what
+  the diff contradicts.
+- **Re-orient** — a large fraction changed, the `crux` file is gone, modules entered or left, or the
+  baseline is unusable. The prose's premises are suspect, so patching would preserve a false claim;
+  re-run the node's aggregations and re-author.
+
+The diff needs the same projection discipline as `sources`: hunks across a hub node's paths over
+hundreds of commits run to megabytes, so it is names first, `--stat` to size, and hunks only for the
+selection.
+
+Two edges that a branch switch makes routine rather than exotic. A node's path list can become
+**empty** — that subsystem does not exist on this line — and the right response is to report it and
+leave the node alone: the writer refuses an empty list, and deleting the node would destroy the
+human-authored `## Notes`. And because a namespace is keyed by repo basename and remote, **all branches
+share one**, so rebuilding for a branch switch replaces the graph for the other branch. For frequent
+switching the cheaper choice is to leave the namespace on the mainline and let drift's "not an ancestor
+of HEAD" warning stand; rebuild when you intend to stay.
+
 ## Optional tree-sitter acceleration
 
 `claude/bin/synapse-tags.sh` is a narrow, purely mechanical helper both `/synapse-init` and the

@@ -274,6 +274,36 @@ stage_index() { # stage_index <node.md> <path>...
   [ ! -f "$REPO/mod-a/ahead.java" ]
 }
 
+@test "a divergent baseline is reported in both directions, and the file diff still holds" {
+  make_two_area_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  # The real scenario, and the ordering matters: the release branch forks *before*
+  # the commit the node was built at, so the baseline is not on this checkout's line.
+  # Branching from the baseline itself would leave it an ancestor and prove nothing.
+  local main fork; main="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"; fork="$(git_head)"
+  printf 'class A { int mainline; }\n' > "$REPO/mod-a/a.java"
+  commit_all mainline-work
+  local base; base="$(git_head)"
+  stage_node "Mod A" "$base" mod-a/a.java mod-a/b.java
+  stage_index "Mod A.md" mod-a/a.java mod-a/b.java
+
+  git -C "$REPO" checkout -q -b release "$fork"
+  git -C "$REPO" rm -q mod-a/b.java
+  commit_all release-only
+  ! git -C "$REPO" merge-base --is-ancestor "$base" HEAD
+
+  run run_drift
+  [ "$status" -eq 0 ]
+  # A one-directional count would claim "1 commits since baseline" and hide that the
+  # baseline's line has work this checkout does not.
+  [[ "$output" == *"is not an ancestor of HEAD"* ]]
+  [[ "$output" == *"the graph describes a different line"* ]]
+  [[ "$output" != *"commits since baseline"* ]]
+  # The tree diff is still correct and useful: b.java genuinely is not here.
+  [[ "$output" == *"Mod A	1 of its files are gone"* ]]
+  git -C "$REPO" checkout -q "$main"
+}
+
 @test "one diff per distinct baseline, not one per node" {
   make_two_area_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"

@@ -29,6 +29,13 @@ Obsidian Sync, iCloud, manual copy — your call).
     hashing, digesting and writing is the scripts'. `manifest.tsv` (`title <TAB> include-ERE <TAB>
     exclude-ERE`) is the seam, which is why coverage comes out as a printed number rather than a
     claim.
+  - `claude/commands/synapse-rebuild.md` — the manual repair for *major* drift: a branch switch, a
+    long absence, a large merge. Sizes the job with `drift` first, then triages each flagged node into
+    **reseat** (renames only — recover the prose from the node itself, swap the paths, read nothing),
+    **patch from the diff** (a small fraction changed — amend only the sentences the diff contradicts),
+    or **re-orient** (a large fraction changed, or the `crux` file is gone, so the prose's premises are
+    suspect). The principle it enforces: compute new prose from the diff, never by re-reading a node's
+    sources, because a node covering 15,000 files where 12 changed already encodes the other 14,988.
   - `claude/hooks/synapse-staleness.sh` — `PostToolUse` (`Write|Edit|MultiEdit`) Tier 1: flags
     edited files' nodes `stale` (or queues a brand-new file into `_unassigned`) via the Local REST
     API directly, no MCP round-trip.
