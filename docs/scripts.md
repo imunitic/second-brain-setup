@@ -4,8 +4,8 @@ Generated from the header block of each script by `docs/generate-scripts-referen
 — the same text the script prints for `--help`. Do not edit by hand; run the
 generator, or `--check` it, which the test suite does.
 
-Design rationale is not here: see [synapse.md](synapse.md) for the Graph these
-scripts build and why they exist at all, and [second-brain.md](second-brain.md) for
+Design rationale is not here: see [synapse-graph.md](synapse-graph.md) for the Graph these
+scripts build and why they exist at all, and [synapse-vault.md](synapse-vault.md) for
 the Vault that hosts it.
 
 ## `synapse-build-index.sh`
@@ -66,7 +66,7 @@ Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (for titles and file counts)
 
 Run after the nodes exist: summaries are read back off the nodes, and a node that
 is missing or has no `summary` is a hard error. Emits no repo-specific prose of
-its own -- see docs/synapse.md for why.
+its own -- see docs/synapse-graph.md for why.
 
 Note for agent callers: needs the sandbox disabled (localhost REST API).
 ```
@@ -124,7 +124,7 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
 
 `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
-When to use which, and why any of this is a script: docs/synapse.md.
+When to use which, and why any of this is a script: docs/synapse-graph.md.
 
 Exit codes:
   0 - ran successfully. Empty output from `stale`/`drift` means clean; `drift`
@@ -200,6 +200,6 @@ Exit codes:
   1 - could not run (missing dependency, no vault, remote mismatch, PUT failed)
   2 - usage error
 
-Design rationale lives in docs/synapse.md, not here.
+Design rationale lives in docs/synapse-graph.md, not here.
 ```
 

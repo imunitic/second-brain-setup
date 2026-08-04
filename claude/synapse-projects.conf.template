@@ -1,11 +1,11 @@
-# Copy this to ~/.claude/second-brain-projects.conf (setup.sh does this for you).
+# Copy this to ~/.claude/synapse-projects.conf (setup.sh does this for you).
 #
 # Known project -> task-prefix mappings for THIS machine only. Deliberately
 # separate from the portable Synapse package (never committed
 # there, never copied between machines) so contexts that shouldn't mix
 # (e.g. personal vs. work projects) never end up in the same file.
 #
-# Self-managed by /sb-note: when it resolves a project it hasn't seen
+# Self-managed by /synapse-note: when it resolves a project it hasn't seen
 # before (via this file, then a vault search, then asking you directly), it
 # appends the new pair here so it won't have to ask again. Also safe to edit
 # by hand -- add, remove, or fix a line any time.

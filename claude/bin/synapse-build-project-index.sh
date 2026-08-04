@@ -11,7 +11,7 @@
 #
 # Run after the nodes exist: summaries are read back off the nodes, and a node that
 # is missing or has no `summary` is a hard error. Emits no repo-specific prose of
-# its own -- see docs/synapse.md for why.
+# its own -- see docs/synapse-graph.md for why.
 #
 # Note for agent callers: needs the sandbox disabled (localhost REST API).
 set -euo pipefail
@@ -35,7 +35,12 @@ REPO_NAME="$(basename "$REPO_ROOT")"
 # Never $PWD: that is the repo, and working files do not belong in a user's checkout.
 readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}"
 readonly LISTS="$WORK_DIR/lists"
-readonly CONF="$HOME/.claude/second-brain.conf"
+# synapse.conf, falling back to the name this file had before the project was
+# renamed, so scripts updated ahead of setup.sh still find an existing config
+# rather than reporting "no vault".
+CONF="$HOME/.claude/synapse.conf"
+[ -f "$CONF" ] || CONF="$HOME/.claude/second-brain.conf"
+readonly CONF
 readonly CERT="$HOME/.claude/obsidian-local-rest-api-ca.pem"
 
 [[ -d "$LISTS" ]] || { echo "synapse-build-project-index: no lists/ in $WORK_DIR" >&2; exit 1; }

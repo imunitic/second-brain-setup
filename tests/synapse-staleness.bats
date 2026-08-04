@@ -147,7 +147,7 @@ EOF
 }
 
 @test "no OBSIDIAN_VAULT_DIR configured: exits before any curl call at all" {
-  cat > "$HOME/.claude/second-brain.conf" <<'EOF'
+  cat > "$HOME/.claude/synapse.conf" <<'EOF'
 EOF
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"

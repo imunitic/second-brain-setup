@@ -18,6 +18,12 @@ common_setup() {
   REPO="$TEST_HOME/repo"
   mkdir -p "$TEST_HOME/.claude" "$VAULT"
 
+  # Captured before the swap. Only for tests that must reach a real, machine-wide
+  # cache they cannot reasonably fake -- currently just puppeteer's Chromium, which
+  # mermaid-cli needs and which lives under the real $HOME. Never a general escape
+  # hatch: everything else belongs inside $TEST_HOME.
+  export REAL_HOME="$HOME"
+
   export HOME="$TEST_HOME"
   export ORIGINAL_HOME_UNUSED=1 # documents that $HOME is intentionally swapped for the test
 
@@ -29,7 +35,7 @@ common_setup() {
   # above $REPO, so discovery from inside the test repo still finds it first.
   export GIT_CEILING_DIRECTORIES="$TEST_HOME"
 
-  cat > "$HOME/.claude/second-brain.conf" <<EOF
+  cat > "$HOME/.claude/synapse.conf" <<EOF
 OBSIDIAN_VAULT_DIR="$VAULT"
 EOF
 }
@@ -38,7 +44,7 @@ common_teardown() {
   [ -n "${TEST_HOME:-}" ] && [ -d "$TEST_HOME" ] && rm -rf "$TEST_HOME"
 }
 
-# Writes a minimal vault Index.md (the second-brain index note itself, not
+# Writes a minimal vault Index.md (the Synapse Vault index note itself, not
 # a Synapse per-project index) -- just enough for the SessionStart hook to
 # have something to inject.
 write_vault_index() {

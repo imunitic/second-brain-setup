@@ -1,0 +1,100 @@
+---
+title: Synapse — how the pieces fit
+---
+%% Colour carries the lane: what the MODEL judges, what a SCRIPT executes, what
+%% lands in the VAULT. Subgraphs carry the phase. The seam is visible as the only
+%% two arrows that leave a yellow box for a blue one -- manifest.tsv and b-NN.md.
+flowchart TB
+    classDef model fill:#ffec99,stroke:#e8590c,color:#1e1e1e
+    classDef seam fill:#ffc9c9,stroke:#c2255c,color:#1e1e1e,stroke-width:3px
+    classDef script fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
+    classDef vault fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+    classDef hook fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
+    classDef cmd fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
+
+    subgraph BUILD["BUILD · /synapse-init"]
+        direction TB
+        ORIENT["<b>model</b><br/>orientation pass<br/>read the repo, aggregate paths,<br/>cluster into nodes"]
+        MANIFEST["<b>manifest.tsv — THE SEAM</b><br/>title ⇥ include-ERE ⇥ exclude-ERE<br/>one line per node"]
+        LISTS["synapse-build-lists.sh<br/>git ls-files → all.txt<br/>expand the manifest → lists/NN.txt<br/>prints enumerated / covered / unassigned"]
+        PROSE["<b>model</b><br/>author prose per node → b-NN.md<br/>summary · crux <i>pointer</i> · links<br/>+ grounded_in pointers"]
+        PUSH["synapse-push-nodes.sh<br/>loops every node with both<br/>a path list and a body"]
+        WRITE["synapse-write-node.sh<br/>hash every path · sources_digest<br/>slice the crux from its pointer<br/>digest each grounded_in range<br/>aggregate ## Sources · record commit"]
+        IDX["synapse-build-index.sh"]
+        PIDX["synapse-build-project-index.sh"]
+        TAGS["synapse-tags.sh<br/>tree-sitter defs + refs<br/>optional, falls back to reading"]
+
+        TAGS -.->|"clustering signal"| ORIENT
+        ORIENT -->|"authors"| MANIFEST
+        MANIFEST --> LISTS
+        MANIFEST --> PROSE
+        LISTS -->|"lists/NN.txt"| PUSH
+        PROSE -->|"b-NN.md"| PUSH
+        PUSH -->|"per node"| WRITE
+        WRITE --> IDX --> PIDX
+    end
+
+    subgraph VAULT["VAULT · synapse/{repo-name}/"]
+        direction LR
+        NODE["{Node Title}.md × N<br/>sources · sources_digest · commit<br/>crux_path · grounded_in · stale<br/>fenced prose + human ## Notes"]
+        JSON["_index.json<br/>source path → owning nodes"]
+        INDEX["Index.md<br/>node map + remote"]
+        AUX["_manifest.tsv · _profile.txt<br/>kept for the next rebuild"]
+    end
+
+    WRITE ==>|"PUT over the local REST API"| NODE
+    IDX ==> JSON
+    PIDX ==> INDEX
+
+    subgraph USE["READ · DETECT · REPAIR"]
+        direction TB
+        QUERY["synapse-query.sh<br/>body · sources · field<br/>reads the expensive parts internally,<br/>prints only the projection asked for"]
+        NODESKILL["synapse-node skill<br/>Tier 2: verify, then regenerate lazily"]
+        STALE1["synapse-staleness.sh<br/>Tier 1 hook: stale: true,<br/>+ correction nudge when cited<br/>evidence stops matching"]
+        STALE2["synapse-query.sh stale<br/>re-hashes what a node claims —<br/>but a rename reads as gone"]
+        DRIFT["synapse-query.sh drift<br/>diffs commit..HEAD: the only thing<br/>that sees ADDED paths, deletes,<br/>renames and branch divergence"]
+        GROUND["synapse-query.sh grounding<br/>re-slices cited evidence:<br/>moved → re-point, changed → re-check"]
+        REBUILD["/synapse-rebuild<br/>triage per node:<br/>reseat · patch from diff · re-orient"]
+
+        DRIFT --> REBUILD
+        GROUND --> REBUILD
+    end
+
+    NODE -.->|"read"| QUERY
+    NODE -.-> NODESKILL
+    JSON -.-> STALE1
+    NODE -.-> STALE2
+    NODE -.-> DRIFT
+    NODE -.-> GROUND
+    REBUILD ==>|"re-writes each node,<br/>re-recording its commit"| WRITE
+
+    class ORIENT,PROSE model
+    class MANIFEST seam
+    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,STALE2,DRIFT,GROUND script
+    class NODE,JSON,INDEX,AUX vault
+    class STALE1 hook
+    class REBUILD,NODESKILL cmd
+
+    subgraph KEY["the colours"]
+        direction LR
+        K1["model judgment"]
+        K2["the seam"]
+        K3["script — mechanics"]
+        K4["vault artifact"]
+        K5["fires automatically"]
+        K6["command / skill"]
+    end
+    class K1 model
+    class K2 seam
+    class K3 script
+    class K4 vault
+    class K5 hook
+    class K6 cmd
+
+    %% Neutral subgraph fills: the default pale yellow competes with the model
+    %% lane's own yellow, and the point of the palette is that the lane is
+    %% readable at a glance.
+    style BUILD fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style VAULT fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style USE fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style KEY fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4

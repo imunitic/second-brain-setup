@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
-# Tests claude/hooks/second-brain-session-start.sh -- both the pre-existing
+# Tests claude/hooks/synapse-session-start.sh -- both the pre-existing
 # index-injection behavior and the Synapse pointer check added for sb-001.
 # Pure git + filesystem, no network.
 
 load 'test_helper'
 
-HOOK="$REPO_ROOT/claude/hooks/second-brain-session-start.sh"
+HOOK="$REPO_ROOT/claude/hooks/synapse-session-start.sh"
 
 setup() {
   common_setup
@@ -85,7 +85,7 @@ run_hook() {
 }
 
 @test "no OBSIDIAN_VAULT_DIR configured: no output, synapse check skipped" {
-  cat > "$HOME/.claude/second-brain.conf" <<'EOF'
+  cat > "$HOME/.claude/synapse.conf" <<'EOF'
 EOF
   make_repo "git@github.com:example/repo.git"
 
@@ -199,4 +199,17 @@ catalogue_lines() {
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
   [[ "$output" == *"syrius3|"* ]]
+}
+
+@test "the stop-nudge hook cites a CLAUDE.md heading that actually exists" {
+  # The nudge text points the reader at a section of the global CLAUDE.md by name.
+  # Renaming the heading without the hook (or the reverse) leaves a pointer to a
+  # section that is not there, and nothing about reading the nudge would reveal it
+  # -- the whole failure is silent. This caught nothing when written; it exists so
+  # the next rename cannot break the pair.
+  local nudge="$REPO_ROOT/claude/hooks/synapse-stop-nudge.sh"
+  local cited
+  cited="$(grep -o 'CLAUDE.md \\"[^\\]*\\" section' "$nudge" | sed -e 's/.*\\"\(.*\)\\" section/\1/')"
+  [ -n "$cited" ]
+  grep -qxF "# $cited" "$REPO_ROOT/claude/CLAUDE.md"
 }

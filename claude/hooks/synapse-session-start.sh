@@ -1,17 +1,21 @@
 #!/bin/bash
 # SessionStart hook: inject the vault's Index.md so every session starts
-# with the second-brain map already in context instead of relying on the
+# with the Synapse Vault map already in context instead of relying on the
 # agent to think to go read it.
 #
 # Also does the Synapse pointer check (see sb-001 -- Synapse implementation).
 # The existence check below is a plain path lookup, never a model call or
 # an HTTP round-trip -- that's what keeps this zero-cost for every repo
 # that never ran /synapse-init.
-CONF="$HOME/.claude/second-brain.conf"
+# synapse.conf, falling back to the name this file had before the project was
+# renamed, so scripts updated ahead of setup.sh still find an existing config
+# rather than reporting "no vault".
+CONF="$HOME/.claude/synapse.conf"
+[ -f "$CONF" ] || CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
 
 INDEX="${OBSIDIAN_VAULT_DIR:-}/Index.md"
-LABEL="Obsidian second-brain index"
+LABEL="Synapse Vault index"
 
 SYNAPSE_LINE=""
 CATALOGUE_BLOCK=""

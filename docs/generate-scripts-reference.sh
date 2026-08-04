@@ -34,8 +34,8 @@ Generated from the header block of each script by `docs/generate-scripts-referen
 — the same text the script prints for `--help`. Do not edit by hand; run the
 generator, or `--check` it, which the test suite does.
 
-Design rationale is not here: see [synapse.md](synapse.md) for the Graph these
-scripts build and why they exist at all, and [second-brain.md](second-brain.md) for
+Design rationale is not here: see [synapse-graph.md](synapse-graph.md) for the Graph these
+scripts build and why they exist at all, and [synapse-vault.md](synapse-vault.md) for
 the Vault that hosts it.
 
 EOF

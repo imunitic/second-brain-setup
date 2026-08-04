@@ -1,11 +1,11 @@
 ---
-name: sb-task
+name: synapse-task
 description: Update Obsidian task notes' status frontmatter and Notes sections, enforcing status transitions so active work is IN-PROGRESS and completed checklists move only to REVIEW (not DONE).
 ---
 
 # Second Brain Task Status Skill
 
-Tracks status for task notes created via `/sb-note --task` and compiled via `/sb-task-note`,
+Tracks status for task notes created via `/synapse-note --task` and compiled via `/synapse-task-note`,
 using a `status:` frontmatter field and GFM `- [ ]`/`- [x]` checklists (the vault's native format,
 no conversion needed).
 
@@ -220,6 +220,6 @@ repos/<owner>/<repo>/issues/<n>/comments`).
 - **Never write `DONE`** — not in `status:`, not manually, not through any
   other path. The cap is always `REVIEW`.
 - Preserve `task_id` untouched — it is set manually (or resolved once by
-  `/sb-note --task`) and must not be auto-generated or overwritten.
+  `/synapse-note --task`) and must not be auto-generated or overwritten.
 - If checklist content is ambiguous or missing, default to `IN-PROGRESS`.
 - Keep notes wording deterministic; avoid speculative claims.

@@ -1,6 +1,6 @@
 # Synapse Init: Build or Refresh a Repo's Code-Graph Namespace
 
-Builds a repo's Synapse namespace in the second-brain vault — a small set of LLM-authored node
+Builds a repo's Synapse Graph namespace in Synapse Vault — a small set of LLM-authored node
 notes (summary + crux + typed links per subsystem/concept) plus the two derived projections that
 keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo-name}/Index.md`).
 
@@ -39,7 +39,7 @@ Every step below needs the same three facts, resolved once up front:
 2. **Repo name:** basename of the repo root. This is the Synapse namespace key
    (`synapse/{repo-name}/`) — a plain, readable folder name, not a collision-proof key (see the
    design note's Alternatives for why). Distinct from the short task-prefix scheme
-   (`project-name=prefix`) used by `/sb-note`/`/sb-design-note` — unrelated
+   (`project-name=prefix`) used by `/synapse-note`/`/synapse-design-note` — unrelated
    conventions that happen to both involve the word "project."
 3. **Remote:** `git remote get-url origin` (or any configured remote if `origin` doesn't exist —
    pick the first one `git remote` lists). If the repo has no remote at all, fall back to the

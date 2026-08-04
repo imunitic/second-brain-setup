@@ -16,7 +16,12 @@
 # Note for agent callers: needs the sandbox disabled (localhost REST API).
 set -euo pipefail
 
-readonly CONF="$HOME/.claude/second-brain.conf"
+# synapse.conf, falling back to the name this file had before the project was
+# renamed, so scripts updated ahead of setup.sh still find an existing config
+# rather than reporting "no vault".
+CONF="$HOME/.claude/synapse.conf"
+[ -f "$CONF" ] || CONF="$HOME/.claude/second-brain.conf"
+readonly CONF
 readonly CERT="$HOME/.claude/obsidian-local-rest-api-ca.pem"
 
 # Extracted from the header block, so help and docs/scripts.md cannot disagree.

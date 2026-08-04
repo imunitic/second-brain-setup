@@ -1,0 +1,38 @@
+---
+title: Design note → task note workflow
+---
+flowchart TB
+    classDef cmd fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
+    classDef state fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
+    classDef skill fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
+    classDef terminal fill:#ffc9c9,stroke:#c2255c,color:#1e1e1e
+    classDef optional fill:#f1f3f5,stroke:#868e96,color:#1e1e1e
+
+    D["/synapse-design-note<br/>free-form discussion in the Vault's designs/"]
+    DS{"Status"}
+    REF["Reference<br/>a decision with nothing to build —<br/>closes here, no task note"]
+    READY["Ready<br/>there is something to build"]
+
+    T["/synapse-task-note<br/>compiles the discussion into<br/>an ordered checklist"]
+    TN["task note in projects/<br/>task_id assigned · status: TODO"]
+
+    SK["synapse-task skill<br/>proactive, not waited for<br/>TODO → IN-PROGRESS → REVIEW"]
+    REV["status: REVIEW"]
+    DONE["DONE<br/>only ever a human editing<br/>frontmatter directly"]
+
+    GH["optional: mirror to a GitHub issue<br/>title, body and first comment copied<br/>UNCHANGED from the task note"]
+
+    D --> DS
+    DS -->|"nothing to implement"| REF
+    DS -->|"ready to build"| READY
+    READY --> T --> TN
+    TN -->|"work starts"| SK
+    SK --> REV
+    REV -.->|"never automatic"| DONE
+    TN -.-> GH
+
+    class D,T cmd
+    class DS,READY,TN,REV state
+    class SK skill
+    class REF,DONE terminal
+    class GH optional

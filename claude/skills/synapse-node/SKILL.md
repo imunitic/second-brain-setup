@@ -136,7 +136,7 @@ needs one.
      enumerating fields by hand is how `summary` and `commit` get silently dropped — which then breaks
      the next `synapse-build-project-index.sh` run, far from the cause.
    - **`## Notes` is human-authored only.** Never write into it — not at regeneration, not to record
-     what you just did. (Task notes in `projects/` are a different artifact: the `sb-task` skill *does*
+     what you just did. (Task notes in `projects/` are a different artifact: the `synapse-task` skill *does*
      append there. Do not carry that habit into a Synapse node.)
    - If the node's `summary` or title changed, rebuild the index so the map matches:
      `~/.claude/bin/synapse-build-project-index.sh`.

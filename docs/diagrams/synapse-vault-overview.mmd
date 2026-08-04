@@ -1,0 +1,51 @@
+---
+title: Synapse Vault — how it stays alive across sessions
+---
+%% Kept deliberately flat: NO subgraph for the Vault. Mermaid drew its cluster box
+%% around the hooks and the session too, which reads as "these live inside the
+%% Vault" -- false. Colour carries membership instead, and edge labels are held
+%% to two or three words. Long labels on crossing edges land on top of boxes, and
+%% detail reads better inside a node than beside an arrow.
+flowchart TB
+    classDef hook fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
+    classDef vault fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+    classDef session fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
+    classDef store fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
+
+    BEGIN["session begins"]
+    H1["<b>SessionStart hook</b><br/>synapse-session-start.sh<br/>injects Index.md, this repo's Graph<br/>pointer, and the catalogue of every<br/>other namespace"]
+    WORK["<b>Claude Code session</b><br/>reading, editing, deciding"]
+    H2["<b>Stop hook</b><br/>synapse-stop-nudge.sh<br/>every 25 turns: did anything here<br/>belong in the Vault?"]
+    H3["<b>PostToolUse hook</b><br/>synapse-db-sync.sh<br/>fires on any vault-modifying MCP call"]
+
+    IDX["Index.md<br/>the folder map, agent-maintained"]
+    FOLDERS["projects/ · research/ · scratchpad/<br/>inbox/ · designs/"]
+    SYN["synapse/{repo-name}/<br/>Synapse Graph namespaces"]
+    GIT[("the Vault's own git history")]
+
+    BEGIN --> H1
+    IDX -->|"read"| H1
+    H1 --> WORK
+    WORK -->|"every 25 turns"| H2
+    H2 -->|"nudge"| WORK
+    WORK -->|"MCP write"| FOLDERS
+    FOLDERS --> H3
+    H3 -->|"commit"| GIT
+
+    class H1,H2,H3 hook
+    class IDX,FOLDERS,SYN vault
+    class BEGIN,WORK session
+    class GIT store
+
+    FOLDERS -.-|"same store, ordinary notes"| SYN
+
+    subgraph KEY["the colours"]
+        direction LR
+        K1["in the Vault"]
+        K2["a Synapse Tools hook"]
+        K3["the session"]
+    end
+    class K1 vault
+    class K2 hook
+    class K3 session
+    style KEY fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4

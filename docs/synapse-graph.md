@@ -3,7 +3,7 @@
 Claude Code re-explores a codebase from scratch every session — grep a term, open a file, follow
 an import, back out, try again — and whatever it learns dies with the session. The Graph is a small,
 LLM-authored map of a repo's subsystems (summary + crux + typed links per concept), hosted in
-[Synapse Vault](second-brain.md) instead of a repo-local folder, so it's global across every project
+[Synapse Vault](synapse-vault.md) instead of a repo-local folder, so it's global across every project
 and searchable the same way any other note is. It's inspired by
 [NanoNets/Graft](https://github.com/NanoNets/Graft) but deliberately much smaller in scope — single
 consumer (Claude Code only), no multi-agent wiring, no standing CLI surface.
@@ -257,7 +257,7 @@ Outside any git repo there is no pointer and nothing to exclude, so the catalogu
 
 ## Two-tier staleness
 
-![The two staleness tiers and the tree-sitter acceleration layer](diagrams/synapse-tiers.png)
+![The two staleness tiers and the tree-sitter acceleration layer](diagrams/synapse-graph-tiers.png)
 
 Both tiers answer "has content under a node changed". Neither can see a file that belongs to *no*
 node, which is what `synapse-query.sh drift` is for — see "Drift" below.

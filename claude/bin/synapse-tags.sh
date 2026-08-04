@@ -24,7 +24,11 @@ command -v tree-sitter >/dev/null 2>&1 || exit 1
 command -v jq >/dev/null 2>&1 || exit 1
 command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 || exit 1
 
-CONF="$HOME/.claude/second-brain.conf"
+# synapse.conf, falling back to the name this file had before the project was
+# renamed, so scripts updated ahead of setup.sh still find an existing config
+# rather than reporting "no vault".
+CONF="$HOME/.claude/synapse.conf"
+[ -f "$CONF" ] || CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
 GRAMMARS_DIR="${SYNAPSE_GRAMMARS_DIR:-$HOME/.cache/synapse/grammars}"
 REGISTRY="$HOME/.claude/synapse-grammars.conf"

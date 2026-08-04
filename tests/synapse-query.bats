@@ -389,3 +389,32 @@ write_fenced_node() {
     false
   fi
 }
+
+@test "config: reads the pre-rename second-brain.conf when synapse.conf is absent" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  # A machine whose scripts were updated ahead of setup.sh: only the old name
+  # exists. Without the fallback this reports "no vault" and every subcommand
+  # exits 1, which reads as "the graph is fine" to a caller that treats exit 1
+  # as absence rather than failure.
+  mv "$HOME/.claude/synapse.conf" "$HOME/.claude/second-brain.conf"
+
+  run run_query body "Foo Node"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Prose that should be printed."* ]]
+}
+
+@test "config: synapse.conf wins when both names exist" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  # The old file points somewhere useless; if it were preferred, this fails.
+  printf 'OBSIDIAN_VAULT_DIR="%s/nope"\n' "$TEST_HOME" > "$HOME/.claude/second-brain.conf"
+
+  run run_query body "Foo Node"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Prose that should be printed."* ]]
+}

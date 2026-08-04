@@ -1,8 +1,8 @@
-# Second brain as permanent memory
+# Synapse Vault as permanent memory
 
-The user keeps a permanent, curated knowledge base — their "second brain" —
+The user keeps a permanent, curated knowledge base — **Synapse Vault** —
 as a memory system separate from and complementary to the `~/.claude`
-auto-memory system: use the second brain for durable, browsable
+auto-memory system: use the Vault for durable, browsable
 knowledge-base notes, not for session bookkeeping. It's an Obsidian vault,
 running headless at login with the Local REST API plugin installed — see
 "Querying the vault" below for how to reach it. A SessionStart hook
@@ -66,7 +66,7 @@ this is the only valid way to query the vault, and it always targets
 whichever vault is currently open in the running Obsidian instance, not a
 hardcoded path. The `obsidian` MCP server wraps that REST API. Do not
 resolve or care about `$OBSIDIAN_VAULT_DIR` (see
-`~/.claude/second-brain.conf`) unless the MCP tools are erroring or
+`~/.claude/synapse.conf`) unless the MCP tools are erroring or
 unavailable and you must fall back to grepping files on disk directly —
 that path variable matters only for that fallback case, since the vault
 is also reachable as plain files on disk at that location.
@@ -74,7 +74,7 @@ is also reachable as plain files on disk at that location.
 If a project's `.claude.json` `mcpServers.obsidian` entry ever diverges
 from the user-scoped one (e.g. points at the wrong vault path via a stdio
 `obsidian-mcp` package instead of the REST API), that's a bug in that
-project's config, not a second-brain routing choice — fix it by removing
+project's config, not a Synapse Vault routing choice — fix it by removing
 the project-level override so the correct user-scoped REST API server
 applies.
 
@@ -133,8 +133,8 @@ applies.
   or a review UI that highlights intra-line changes), and very long lines are
   awkward in tools that don't soft-wrap (`less` without `-S`, narrow terminal
   diffs).
-- Create notes via the `/sb-note` command; task-tracking notes are
-  additionally managed by the `sb-task` skill (proactive status
+- Create notes via the `/synapse-note` command; task-tracking notes are
+  additionally managed by the `synapse-task` skill (proactive status
   transitions via the `status:` frontmatter field).
 
 ## Searching notes

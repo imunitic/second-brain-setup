@@ -15,29 +15,30 @@ This repository packages the **Tools**, plus the templates and config they need.
 your notes: the Vault's content is a separate sync concern (git, Obsidian Sync, iCloud, manual copy —
 your call).
 
-> **A note on names.** Several files still carry this project's earlier name (`second-brain.conf`,
-> `claude/hooks/second-brain-*.sh`, the `/sb-*` commands). Renaming them breaks an existing install
-> unless the installer migrates it, so they are deliberately left alone for now. Where this README
-> names a file, it names the real one.
+> **Upgrading from before the rename?** Just re-run `./setup.sh`. It moves
+> `second-brain.conf`/`second-brain-projects.conf` to their `synapse-` names keeping your contents,
+> rewrites the `settings.json` hook paths (and collapses any duplicate that creates, since a duplicated
+> entry fires twice), and names the leftover files that are safe to delete. Every script also reads the
+> old config name as a fallback, so scripts updated ahead of `setup.sh` keep working.
 
 ## Synapse Vault — the notes
 
 - `claude/CLAUDE.md` — the global memory-system instructions: when to write a note, where it goes,
   and the linking rules.
-- `claude/second-brain.conf.template` — path config; set `OBSIDIAN_VAULT_DIR` per machine.
-- `claude/hooks/second-brain-session-start.sh` — `SessionStart`: injects the Vault's index so every
+- `claude/synapse.conf.template` — path config; set `OBSIDIAN_VAULT_DIR` per machine.
+- `claude/hooks/synapse-session-start.sh` — `SessionStart`: injects the Vault's index so every
   session starts with the map already in context, and points at this repo's Graph namespace if one
   exists (a plain path lookup, never a model call — a repo that never opted in pays nothing).
-- `claude/hooks/second-brain-stop-nudge.sh` — a turn-count-based `Stop` hook that forces a "worth
+- `claude/hooks/synapse-stop-nudge.sh` — a turn-count-based `Stop` hook that forces a "worth
   capturing?" check-in every 25 turns.
-- `claude/hooks/second-brain-db-sync.sh` — commits Vault changes to the Vault's own local git repo,
+- `claude/hooks/synapse-db-sync.sh` — commits Vault changes to the Vault's own local git repo,
   if one exists.
-- `claude/commands/sb-note.md` — note creation (bare / `--task` / `--list` / `--search`).
-- `claude/commands/sb-design-note.md`, `claude/commands/sb-task-note.md` — a design-discussion →
+- `claude/commands/synapse-note.md` — note creation (bare / `--task` / `--list` / `--search`).
+- `claude/commands/synapse-design-note.md`, `claude/commands/synapse-task-note.md` — a design-discussion →
   compiled-checklist pipeline that lives in the Vault (`designs/`, `projects/`) rather than a repo's
   gitignored `docs/notes/`, so it is cross-project by default. Task creation and status tracking
-  delegate to `sb-note.md --task` and `skills/sb-task/`, not a separate mechanism.
-- `claude/skills/sb-task/` — proactive task-status tracking.
+  delegate to `synapse-note.md --task` and `skills/synapse-task/`, not a separate mechanism.
+- `claude/skills/synapse-task/` — proactive task-status tracking.
 
 ## Synapse Graph — the per-repo code graph
 
@@ -141,7 +142,7 @@ prints the manual steps below.
    This extracts the plugin's generated cert + API key, wires `NODE_EXTRA_CA_CERTS`, and registers the
    `obsidian` MCP server at user scope (available from any project, any directory). Safe to re-run if
    you ever reinstall the plugin — new cert and key each time.
-4. Edit `~/.claude/second-brain.conf`: set `OBSIDIAN_VAULT_DIR` to the Vault path.
+4. Edit `~/.claude/synapse.conf`: set `OBSIDIAN_VAULT_DIR` to the Vault path.
 5. (Recommended) Add Obsidian to macOS login items so it is always running:
    ```sh
    osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Obsidian.app", hidden:false}'
@@ -161,7 +162,7 @@ bats tests/
 ```
 
 Covers `setup.sh` (idempotent install and merge into a scratch `$HOME`),
-`second-brain-session-start.sh` (index injection, the Graph pointer check, and the other-namespaces
+`synapse-session-start.sh` (index injection, the Graph pointer check, and the other-namespaces
 catalogue — pure git and filesystem, no network), `synapse-staleness.sh` (Tier 1 flagging plus the
 correction nudge, with `tests/fixtures/fake-bin/curl` stubbing out the Obsidian Local REST API so no
 real Vault or plugin is needed), `synapse-tags.sh` (registry lookup, exit-code contract, and
@@ -176,10 +177,13 @@ so a drift between the writer and the verifier fails a test instead of silently 
 Every test runs against a throwaway `$HOME`, git repo and Vault created in `tests/test_helper.bash` —
 nothing here touches your real `~/.claude` or Vault.
 
-Also covered: `docs/scripts.md` is generated from each script's header block by
-`docs/generate-scripts-reference.sh`, and the suite runs that generator's `--check` mode — so a header
-edit that was never regenerated fails a test instead of leaving a reference that describes a script as
-it used to be.
+Also covered: the two generated artefacts, both verified by running their generator's `--check` mode, so
+an edit that was never regenerated fails a test instead of shipping something confidently wrong.
+`docs/scripts.md` comes from each script's header block via `docs/generate-scripts-reference.sh`. The
+diagrams under `docs/diagrams/` are Mermaid sources rendered to PNG by `docs/generate-diagrams.sh`,
+which records each source's hash so it can tell a stale render from a current one — it hashes the
+`.mmd` rather than comparing PNG bytes, because mermaid-cli output is not byte-reproducible across
+versions, fonts or platforms.
 
 Not covered: `claude/commands/synapse-init.md`, `claude/commands/synapse-rebuild.md` and
 `claude/skills/synapse-node/SKILL.md` are natural-language procedures Claude follows, not code —

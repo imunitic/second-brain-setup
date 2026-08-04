@@ -1,0 +1,56 @@
+---
+title: Synapse Graph — staleness tiers, correction, and tree-sitter acceleration
+---
+flowchart TB
+    classDef trigger fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
+    classDef hook fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
+    classDef skill fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
+    classDef artifact fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+    classDef optional fill:#f1f3f5,stroke:#868e96,color:#1e1e1e
+
+    EDIT["a source file is edited"]
+    READ["a node's body is about<br/>to actually be used"]
+
+    subgraph T1["Tier 1 · hook, on edit"]
+        direction TB
+        H["synapse-staleness.sh<br/>PostToolUse: Write / Edit / MultiEdit"]
+        FLAG["node → stale: true<br/>or the path → _unassigned"]
+        CITED{"does this file hold<br/>a crux or grounded_in<br/>range the node cites?"}
+        NUDGE["correction nudge:<br/>fix the one sentence this edit<br/>contradicts — nothing wider"]
+        H --> FLAG
+        H --> CITED
+        CITED -->|"cited and no longer matching"| NUDGE
+        CITED -->|"still matching, or not cited"| SILENT["say nothing"]
+    end
+
+    subgraph T2["Tier 2 · procedure, at read time"]
+        direction TB
+        SK["synapse-node skill<br/>verify before use, then regenerate"]
+        VERIFY["synapse-query.sh stale<br/>re-hash sources vs sources_digest"]
+        REGEN["regenerate inside the fence<br/>## Notes preserved verbatim"]
+        SWEEP["_unassigned sweep<br/>rides along on any regeneration"]
+        SK --> VERIFY --> REGEN
+        REGEN --> SWEEP
+    end
+
+    subgraph TS["tree-sitter · optional"]
+        direction TB
+        TAGS["synapse-tags.sh<br/>tried first, never required"]
+        REG["~/.claude/synapse-grammars.conf<br/>self-populating registry"]
+        TAGS <--> REG
+    end
+
+    EDIT --> H
+    EDIT -.->|"same file, later"| READ
+    READ --> SK
+    REGEN -.->|"tries first"| TAGS
+    TAGS -.->|"exit 0: use the tags<br/>exit 1: fall back to a full read<br/>exit 2: run discovery once, then retry"| REGEN
+
+    class EDIT,READ trigger
+    class H,FLAG,CITED,NUDGE,SILENT hook
+    class SK,VERIFY,REGEN,SWEEP skill
+    class TAGS,REG optional
+
+    style T1 fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style T2 fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style TS fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4

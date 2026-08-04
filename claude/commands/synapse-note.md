@@ -1,20 +1,20 @@
-Create a note in the Obsidian second-brain vault with the title and options, list existing notes, or search existing notes: $ARGUMENTS
+Create a note in Synapse Vault with the title and options, list existing notes, or search existing notes: $ARGUMENTS
 
 ## Argument parsing
 
 If `$ARGUMENTS` is `--list` (or starts with `--list`) → **list mode**: see "List mode" below, skip note creation entirely.
 
-If `$ARGUMENTS` starts with `--search` → **search mode**: see "Search mode" below, skip note creation entirely. This is also the mode to reach for programmatically (not just when the user explicitly asks to search) — per the second-brain CLAUDE.md instructions, linking to an existing note is the highest-priority step before creating a new one, so run a search here before every bare-mode note creation, not only when a search is requested outright.
+If `$ARGUMENTS` starts with `--search` → **search mode**: see "Search mode" below, skip note creation entirely. This is also the mode to reach for programmatically (not just when the user explicitly asks to search) — per the Synapse Vault CLAUDE.md instructions, linking to an existing note is the highest-priority step before creating a new one, so run a search here before every bare-mode note creation, not only when a search is requested outright.
 
 Otherwise, split `$ARGUMENTS` on `--task`:
 
-- If `--task` is present → **task mode**: scaffold the note as a tracked task, following the `sb-task` skill's conventions. Task notes always live under `projects/`.
+- If `--task` is present → **task mode**: scaffold the note as a tracked task, following the `synapse-task` skill's conventions. Task notes always live under `projects/`.
 - Otherwise → **bare mode**: create an empty node (title + frontmatter only). Which category folder it lands in (`projects` / `research` / `scratchpad`) is resolved in "Choosing a category (bare mode only)" below.
 
 The title is everything before `--task` (trimmed). Example:
 
-- `/sb-note "My idea"` → bare note titled "My idea"
-- `/sb-note "proj-035 — Implement Foo" --task` → task note titled "proj-035 — Implement Foo"
+- `/synapse-note "My idea"` → bare note titled "My idea"
+- `/synapse-note "proj-035 — Implement Foo" --task` → task note titled "proj-035 — Implement Foo"
 
 In task mode, also attempt to extract a task ID from the title by matching a `{prefix}-\d+` pattern (letters, a hyphen, then digits). Use it as `task_id` in frontmatter.
 
@@ -49,7 +49,7 @@ Do not modify any files in search mode.
 
 Triggered when `--task` is given but the title doesn't match `{prefix}-\d+`.
 
-The known project/prefix pairs live in a plain local file, `~/.claude/second-brain-projects.conf`
+The known project/prefix pairs live in a plain local file, `~/.claude/synapse-projects.conf`
 (one `project-name=prefix` line each) — read/appended with the Read/Edit tools, not the `obsidian`
 MCP server, since it's outside the vault. It is deliberately **not** part of the portable
 Synapse package and never copied between machines, so contexts that shouldn't mix (e.g.
@@ -59,7 +59,7 @@ at any time.
 
 1. Identify the current project from context: the repo's `CLAUDE.md` (title/"About" section) or
    `git remote`.
-2. Check `~/.claude/second-brain-projects.conf` for a line whose project name matches (loosely —
+2. Check `~/.claude/synapse-projects.conf` for a line whose project name matches (loosely —
    case/whitespace-insensitive). If found, use that prefix directly — no need to ask.
 3. If the file doesn't have it yet, fall back to deducing from the vault itself (useful the first
    time this runs, or for a project whose notes predate this file): `search_simple` for the
@@ -86,7 +86,7 @@ at any time.
    use the resolved task ID for `task_id`. Don't let the frontmatter task
    ID and the visible title disagree.
 
-`/sb-design-note`/`/sb-task-note` read the same conf file directly for the same reason —
+`/synapse-design-note`/`/synapse-task-note` read the same conf file directly for the same reason —
 they don't duplicate this resolution logic, just this file.
 
 ## Choosing a category (bare mode only)
@@ -151,4 +151,4 @@ Report the file path back to the user.
 - Bare mode: note that the note is intentionally near-empty.
 - Task mode: note the task ID extracted or resolved, and remind the user
   to populate the `## Notes` section and checklist before starting work,
-  per the `sb-task` skill.
+  per the `synapse-task` skill.

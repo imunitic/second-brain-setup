@@ -4,10 +4,14 @@
 # certainty which file just changed, so this is pure bookkeeping (no
 # git-hash verification, that's Tier 2 at read time). Talks to the Obsidian
 # Local REST API directly rather than through the mcp__obsidian__ tools,
-# same reasoning as second-brain-db-sync.sh.
+# same reasoning as synapse-db-sync.sh.
 set -euo pipefail
 
-CONF="$HOME/.claude/second-brain.conf"
+# synapse.conf, falling back to the name this file had before the project was
+# renamed, so scripts updated ahead of setup.sh still find an existing config
+# rather than reporting "no vault".
+CONF="$HOME/.claude/synapse.conf"
+[ -f "$CONF" ] || CONF="$HOME/.claude/second-brain.conf"
 [ -f "$CONF" ] && source "$CONF"
 
 VAULT="${OBSIDIAN_VAULT_DIR:-}"
@@ -256,7 +260,7 @@ done <<< "$NODES"
 [ -s "$FINDINGS" ] || exit 0
 
 # `additionalContext` rather than `decision: block`: this is information for the
-# next turn, not a reason to stop. Same shape as second-brain-stop-nudge.sh.
+# next turn, not a reason to stop. Same shape as synapse-stop-nudge.sh.
 jq -Rn --rawfile findings "$FINDINGS" '
   ($findings | rtrimstr("\n") | split("\n")
     | map(split("\t") | "  - " + .[0] + " — " + .[1]) | join("\n")) as $list
