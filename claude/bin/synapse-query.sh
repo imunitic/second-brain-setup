@@ -544,21 +544,48 @@ cmd_drift() {
 # is prose to it -- exactly queryable via `in` on `content`, but one request per
 # question and no transitive or aggregate answers at all.
 
+# relation<TAB>target for one node file, prefixed with a source column when a name
+# is given. The whole-graph walks fan this out over every node; the outbound case
+# reads a single file, because a node's own links live in its own file and deriving
+# all of them to filter for one is 48 reads to answer with 1.
+file_edges() { # file_edges <node-file> [<source-name>]
+  awk -v src="${2:-}" '
+    /^## Links$/ { inl = 1; next }
+    inl && /^## / { exit }
+    inl && /^-[[:space:]]*[^[:space:]]+[[:space:]]*\[\[[^]]+\]\]/ {
+      rel = $0; sub(/^-[[:space:]]*/, "", rel); sub(/[[:space:]]*\[\[.*$/, "", rel)
+      tgt = $0; sub(/^[^[]*\[\[/, "", tgt); sub(/\]\].*$/, "", tgt)
+      if (src == "") { printf "%s\t%s\n", rel, tgt }
+      else { printf "%s\t%s\t%s\n", src, rel, tgt }
+    }' "$1"
+}
+
 # source<TAB>relation<TAB>target for every link in this namespace.
+#
+# One awk over every file rather than one per file. The per-file scan is cheap even
+# on a hub node -- 4.5 MB costs about 0.04s -- so the cost of the loop was process
+# startup: 48 awk spawns plus two `basename` subshells each. `FILENAME` gives the
+# source name without either.
+#
+# `inl = 0` rather than `exit` at the next heading, because `exit` would end the
+# whole run at the first file instead of moving to the next one.
 node_edges() {
-  local dir="$VAULT/synapse/$REPO_NAME" f
-  for f in "$dir"/*.md; do
-    [ -f "$f" ] || continue
-    case "$(basename "$f")" in Index.md) continue ;; esac
-    awk -v src="$(basename "$f" .md)" '
-      /^## Links$/ { inl = 1; next }
-      inl && /^## / { exit }
-      inl && /^-[[:space:]]*[^[:space:]]+[[:space:]]*\[\[[^]]+\]\]/ {
-        rel = $0; sub(/^-[[:space:]]*/, "", rel); sub(/[[:space:]]*\[\[.*$/, "", rel)
-        tgt = $0; sub(/^[^[]*\[\[/, "", tgt); sub(/\]\].*$/, "", tgt)
-        printf "%s\t%s\t%s\n", src, rel, tgt
-      }' "$f"
-  done
+  local dir="$VAULT/synapse/$REPO_NAME"
+  awk '
+    FNR == 1 {
+      inl = 0
+      src = FILENAME
+      sub(/.*\//, "", src); sub(/\.md$/, "", src)
+      skip = (src == "Index")
+    }
+    skip { next }
+    /^## Links$/ { inl = 1; next }
+    inl && /^## / { inl = 0; next }
+    inl && /^-[[:space:]]*[^[:space:]]+[[:space:]]*\[\[[^]]+\]\]/ {
+      rel = $0; sub(/^-[[:space:]]*/, "", rel); sub(/[[:space:]]*\[\[.*$/, "", rel)
+      tgt = $0; sub(/^[^[]*\[\[/, "", tgt); sub(/\]\].*$/, "", tgt)
+      printf "%s\t%s\t%s\n", src, rel, tgt
+    }' "$dir"/*.md 2>/dev/null
 }
 
 cmd_links() {
@@ -568,16 +595,18 @@ cmd_links() {
       # Every target must name a node that exists. A broken wikilink is a valid
       # link to a not-yet-existing note, so Obsidian renders it without complaint
       # and nothing else in the system notices.
+      # Parameter expansion rather than `basename`, and one awk rather than a grep
+      # per edge. Both were per-item process spawns, which is what actually costs
+      # here -- scanning the files themselves is cheap even at 4.5 MB.
       : > "$WORK/nodes-present.txt"
+      local f b
       for f in "$VAULT/synapse/$REPO_NAME"/*.md; do
         [ -f "$f" ] || continue
-        basename "$f" .md >> "$WORK/nodes-present.txt"
+        b="${f##*/}"; printf '%s\n' "${b%.md}" >> "$WORK/nodes-present.txt"
       done
-      LC_ALL=C sort -u "$WORK/nodes-present.txt" -o "$WORK/nodes-present.txt"
-      node_edges | while IFS="$(printf '\t')" read -r src rel tgt; do
-        grep -qxF "$tgt" "$WORK/nodes-present.txt" && continue
-        printf '%s\t%s -> %s (no such node)\n' "$src" "$rel" "$tgt"
-      done
+      node_edges | awk -F'\t' -v nodes="$WORK/nodes-present.txt" '
+        BEGIN { while ((getline l < nodes) > 0) present[l] = 1 }
+        !($3 in present) { printf "%s\t%s -> %s (no such node)\n", $1, $2, $3 }'
       ;;
     "" ) usage ;;
     -* ) usage ;;
@@ -586,7 +615,8 @@ cmd_links() {
       fetch_node "$1" >/dev/null || exit 1
       case "${2:-}" in
         "")
-          node_edges | awk -F'\t' -v n="$node" '$1 == n { print $2 "\t" $3 }' | LC_ALL=C sort ;;
+          # $NODE_FILE was resolved by fetch_node above, so this reads one file.
+          file_edges "$NODE_FILE" | LC_ALL=C sort ;;
         --inbound)
           [ $# -eq 2 ] || usage
           node_edges | awk -F'\t' -v n="$node" '$3 == n { print $2 "\t" $1 }' | LC_ALL=C sort ;;
