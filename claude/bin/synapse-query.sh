@@ -20,7 +20,9 @@
 # When to use which, and why any of this is a script: docs/synapse.md.
 #
 # Exit codes:
-#   0 - ran successfully (check stdout; empty output from `stale`/`drift` means clean)
+#   0 - ran successfully. Empty output from `stale`/`drift` means clean; `drift`
+#       prints context (commits behind, commits since baseline) only alongside a
+#       finding, so silence means the graph matches the worktree.
 #   1 - could not run (missing dependency, no vault, no namespace, remote
 #       mismatch, unknown node). Treat as "no information", never as "clean".
 #   2 - usage error (unknown subcommand, bad flag, unsupported field)
@@ -301,32 +303,31 @@ cmd_drift() {
   jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
     "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
 
-  # Never fetches, so this is the state as of the last fetch.
-  UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [ -n "$UPSTREAM" ]; then
-    BEHIND="$(git -C "$REPO_ROOT" rev-list --count "HEAD..$UPSTREAM" 2>/dev/null || echo 0)"
-    [ "$BEHIND" -gt 0 ] && printf '(repo)\t%s commits behind %s, as of the last fetch\n' "$BEHIND" "$UPSTREAM"
-  fi
-
-  # Collect distinct baselines, so the diff below runs once per baseline, not once
-  # per node -- nodes built in the same run share a commit.
+  # Findings are buffered rather than printed as they are found, so that silence can
+  # mean "the graph matches the worktree". Context -- how far behind upstream, how
+  # many commits since a baseline -- is only worth printing next to a finding; on its
+  # own it is a git fact, not graph drift.
+  : > "$WORK/found-repo.txt"
+  : > "$WORK/found-nodes.txt"
   : > "$WORK/baselines.txt"
   : > "$WORK/node-baseline.tsv"
+  : > "$WORK/dirty-baselines.txt"
+  : > "$WORK/divergent-baselines.txt"
+
   while IFS= read -r node; do
     [ -n "$node" ] || continue
     if ! api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md"; then
-      printf '%s\tnode file missing from the vault\n' "${node%.md}"
+      printf '%s\tnode file missing from the vault\n' "${node%.md}" >> "$WORK/found-nodes.txt"
       continue
     fi
     baseline="$(frontmatter_field "$WORK/node.md" commit)"
     if [ -z "$baseline" ]; then
-      printf '%s\tno commit recorded, so nothing to diff against -- verify with `stale`\n' "${node%.md}"
+      printf '%s\tno commit recorded, so nothing to diff against -- verify with `stale`\n' "${node%.md}" >> "$WORK/found-nodes.txt"
       continue
     fi
     if ! git -C "$REPO_ROOT" cat-file -e "$baseline^{commit}" 2>/dev/null; then
-      # Force-push, a rebase that dropped it, or a shallow clone. Saying so beats
-      # reporting a diff against something that is not this history.
-      printf '%s\tbaseline %s not in local history -- verify with `stale`\n' "${node%.md}" "$(printf '%s' "$baseline" | cut -c1-12)"
+      printf '%s\tbaseline %s not in local history -- verify with `stale`\n' \
+        "${node%.md}" "$(printf '%s' "$baseline" | cut -c1-12)" >> "$WORK/found-nodes.txt"
       continue
     fi
     printf '%s\n' "$baseline" >> "$WORK/baselines.txt"
@@ -334,8 +335,7 @@ cmd_drift() {
     printf '%s\t%s\n' "$node" "$baseline" >> "$WORK/node-baseline.tsv"
   done < "$WORK/nodes.txt"
 
-  [ -s "$WORK/node-baseline.tsv" ] || return 0
-
+  # One diff per distinct baseline: nodes built in the same run share a commit.
   while IFS= read -r base; do
     d="$WORK/diff-$base"
     [ -f "$d.raw" ] && continue
@@ -346,20 +346,15 @@ cmd_drift() {
     awk -F'\t' '$1 ~ /^D/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.del"
     awk -F'\t' '$1 ~ /^R/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.ren"
     awk -F'\t' '$1 ~ /^A/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.add"
-    # `--left-right`, not `--count base..HEAD`: the one-directional count reports
-    # only commits unique to HEAD, which is misleading once the two have diverged.
-    SHORT="$(printf '%s' "$base" | cut -c1-12)"
-    LR="$(git -C "$REPO_ROOT" rev-list --left-right --count "$base...HEAD" 2>/dev/null || echo '0	0')"
-    ONLY_BASE="$(printf '%s' "$LR" | cut -f1)"
-    ONLY_HEAD="$(printf '%s' "$LR" | cut -f2)"
-    if git -C "$REPO_ROOT" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
-      [ "$ONLY_HEAD" -gt 0 ] && printf '(repo)\t%s commits since baseline %s\n' "$ONLY_HEAD" "$SHORT"
-    else
-      # Not an ancestor: a branch switch, a rebase, or a reset. The tree diff below
-      # is still exactly right -- it compares file contents, not history -- but the
-      # graph was built against a line this checkout is not on, so say so.
+
+    # Divergence is a finding in its own right: the graph was built against a line
+    # this checkout is not on, whatever the file-level diff says.
+    if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
+      printf '%s\n' "$base" >> "$WORK/divergent-baselines.txt"
+      LR="$(git -C "$REPO_ROOT" rev-list --left-right --count "$base...HEAD" 2>/dev/null || echo '0	0')"
       printf '(repo)\tbaseline %s is not an ancestor of HEAD: %s commits only on the baseline, %s only here -- the graph describes a different line\n' \
-        "$SHORT" "$ONLY_BASE" "$ONLY_HEAD"
+        "$(printf '%s' "$base" | cut -c1-12)" "$(printf '%s' "$LR" | cut -f1)" "$(printf '%s' "$LR" | cut -f2)" \
+        >> "$WORK/found-repo.txt"
     fi
   done < <(LC_ALL=C sort -u "$WORK/baselines.txt")
 
@@ -370,12 +365,14 @@ cmd_drift() {
     n_mod="$(count_intersect "$p" "$d.mod")"
     n_del="$(count_intersect "$p" "$d.del")"
     n_ren="$(count_intersect "$p" "$d.ren")"
-    [ "$n_mod" -gt 0 ] && printf '%s\tcontent changed in %s of its files\n' "${node%.md}" "$n_mod"
+    if [ "$n_mod" -gt 0 ] || [ "$n_del" -gt 0 ] || [ "$n_ren" -gt 0 ]; then
+      printf '%s\n' "$base" >> "$WORK/dirty-baselines.txt"
+    fi
+    [ "$n_mod" -gt 0 ] && printf '%s\tcontent changed in %s of its files\n' "${node%.md}" "$n_mod" >> "$WORK/found-nodes.txt"
     # Renames are the one class fixable without re-authoring: the concept is
-    # unchanged, only the paths moved, so the node can be rewritten from its own
-    # existing prose with an updated path list.
-    [ "$n_ren" -gt 0 ] && printf '%s\t%s of its files were renamed -- reseat sources, prose may still hold\n' "${node%.md}" "$n_ren"
-    [ "$n_del" -gt 0 ] && printf '%s\t%s of its files are gone\n' "${node%.md}" "$n_del"
+    # unchanged, only the paths moved.
+    [ "$n_ren" -gt 0 ] && printf '%s\t%s of its files were renamed -- reseat sources, prose may still hold\n' "${node%.md}" "$n_ren" >> "$WORK/found-nodes.txt"
+    [ "$n_del" -gt 0 ] && printf '%s\t%s of its files are gone\n' "${node%.md}" "$n_del" >> "$WORK/found-nodes.txt"
   done < "$WORK/node-baseline.tsv"
 
   # Added paths that no node claims. Split by whether a manifest pattern would
@@ -409,19 +406,41 @@ cmd_drift() {
             printf '%s\n' "$path" >> "$WORK/needs-decision.txt"
           fi
         done < "$WORK/unclaimed.txt"
-        [ "$AUTO" -gt 0 ] && printf '(repo)\t%s new paths already match a manifest pattern -- re-run synapse-build-lists.sh to claim them\n' "$AUTO"
+        [ "$AUTO" -gt 0 ] && printf '(repo)\t%s new paths already match a manifest pattern -- re-run synapse-build-lists.sh to claim them\n' "$AUTO" >> "$WORK/found-repo.txt"
         if [ -s "$WORK/needs-decision.txt" ]; then
           printf '(repo)\t%s new paths match no manifest pattern: %s\n' \
             "$(grep -c . "$WORK/needs-decision.txt")" \
-            "$(head -5 "$WORK/needs-decision.txt" | tr '\n' ' ')"
+            "$(head -5 "$WORK/needs-decision.txt" | tr '\n' ' ')" >> "$WORK/found-repo.txt"
         fi
       else
         printf '(repo)\t%s new paths claimed by no node, and no manifest to classify them against\n' \
-          "$(grep -c . "$WORK/unclaimed.txt")"
+          "$(grep -c . "$WORK/unclaimed.txt")" >> "$WORK/found-repo.txt"
       fi
     fi
   fi
+
+  # Nothing to report: stay silent, so silence is a usable signal.
+  [ -s "$WORK/found-repo.txt" ] || [ -s "$WORK/found-nodes.txt" ] || return 0
+
+  # Context, printed only now that there is a finding to attach it to.
+  UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  if [ -n "$UPSTREAM" ]; then
+    BEHIND="$(git -C "$REPO_ROOT" rev-list --count "HEAD..$UPSTREAM" 2>/dev/null || echo 0)"
+    # Never fetches, so this is the state as of the last fetch.
+    [ "$BEHIND" -gt 0 ] && printf '(repo)\t%s commits behind %s, as of the last fetch\n' "$BEHIND" "$UPSTREAM"
+  fi
+  while IFS= read -r base; do
+    # Skipped for a divergent baseline: `--count base..HEAD` is the one-directional
+    # number, and the divergence line above already reports both sides.
+    grep -qxF "$base" "$WORK/divergent-baselines.txt" && continue
+    COMMITS="$(git -C "$REPO_ROOT" rev-list --count "$base..HEAD" 2>/dev/null || echo 0)"
+    [ "$COMMITS" -gt 0 ] && printf '(repo)\t%s commits since baseline %s\n' \
+      "$COMMITS" "$(printf '%s' "$base" | cut -c1-12)"
+  done < <(LC_ALL=C sort -u "$WORK/dirty-baselines.txt")
+  cat "$WORK/found-repo.txt"
+  cat "$WORK/found-nodes.txt"
 }
+
 
 # $SUB was validated above, so this needs no catch-all.
 case "$SUB" in

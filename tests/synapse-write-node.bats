@@ -227,6 +227,29 @@ make_layered_repo() {
   [[ "$output" != *"uncommitted changes"* ]]
 }
 
+@test "writing a node from its own recovered body is idempotent" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+  printf '## Summary\nThe prose.\n\n## Crux\n```ocaml\nlet x = 1\n```\n' > "$BODY"
+  run run_write --title "Roundtrip" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+
+  # A reseat recovers the body from the node, drops the regenerated ## Sources block
+  # and writes it back. Doing that repeatedly must not accrete padding, since the
+  # fenced region is emitted with blank lines around the body.
+  local f; f="$(node_file Roundtrip)"
+  local pass1 pass2 i
+  for i in 1 2; do
+    sed -n '/<!-- synapse:generated:start -->/,/<!-- synapse:generated:end -->/p' "$f" \
+      | sed -e '1d' -e '$d' | awk '/^## Sources$/ { exit } { print }' > "$TEST_HOME/recovered.md"
+    run run_write --title "Roundtrip" --paths "$PATHS" --body "$TEST_HOME/recovered.md"
+    [ "$status" -eq 0 ]
+    if [ "$i" -eq 1 ]; then pass1="$(cat "$f")"; else pass2="$(cat "$f")"; fi
+  done
+  # Identical but for built_at, which moves by design.
+  [ "$(printf '%s\n' "$pass1" | grep -v '^built_at:')" = "$(printf '%s\n' "$pass2" | grep -v '^built_at:')" ]
+}
+
 @test "a first write creates an empty ## Notes section" {
   make_repo
   printf 'src/foo.ml\n' > "$PATHS"

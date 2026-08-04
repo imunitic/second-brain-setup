@@ -251,13 +251,14 @@ stage_index() { # stage_index <node.md> <path>...
   [[ "$output" == *"Ghost	node file missing from the vault"* ]]
 }
 
-@test "reports how far behind the upstream ref already is, without fetching" {
+@test "being behind upstream is context, printed only alongside a finding" {
   make_two_area_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
-  stage_node "Mod A" "$(git_head)" mod-a/a.java
+  local base; base="$(git_head)"
+  stage_node "Mod A" "$base" mod-a/a.java
   stage_index "Mod A.md" mod-a/a.java
 
-  # A local branch works as an upstream, which keeps the test free of a real remote.
+  # A local branch serves as an upstream, keeping the test free of a real remote.
   local branch; branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
   git -C "$REPO" branch -q up
   git -C "$REPO" checkout -q up
@@ -266,10 +267,22 @@ stage_index() { # stage_index <node.md> <path>...
   git -C "$REPO" checkout -q "$branch"
   git -C "$REPO" branch -q --set-upstream-to=up "$branch" 2>/dev/null
 
+  # Behind upstream, but the graph still matches this worktree: nothing to do, so
+  # silence. Being behind is a git fact, and reporting it here would make silence
+  # useless as a signal.
   run run_drift
   [ "$status" -eq 0 ]
+  [ -z "$output" ]
+
+  # Once a node actually drifts, the same fact becomes useful context and appears.
+  printf 'class A { int x; }\n' > "$REPO/mod-a/a.java"
+  commit_all edit
+  run run_drift
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Mod A	content changed in 1 of its files"* ]]
   [[ "$output" == *"commits behind up, as of the last fetch"* ]]
-  # Read-only: the working tree must be untouched, and HEAD must not have moved.
+
+  # Read-only throughout: HEAD must not have moved and nothing may be fetched in.
   [ "$(git -C "$REPO" rev-parse --abbrev-ref HEAD)" = "$branch" ]
   [ ! -f "$REPO/mod-a/ahead.java" ]
 }

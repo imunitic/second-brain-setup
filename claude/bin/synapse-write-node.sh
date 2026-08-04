@@ -238,7 +238,14 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
     printf '# %s\n' "$node_title"
     echo '<!-- synapse:generated:start -->'
     echo
-    cat "$body_file"
+    # Trim leading/trailing blank lines, so recovering a body from a node and writing
+    # it back is idempotent rather than accreting padding on every reseat.
+    awk '{ a[NR] = $0 }
+         END {
+           first = 1; while (first <= NR && a[first] ~ /^[[:space:]]*$/) first++
+           last = NR;  while (last >= first && a[last] ~ /^[[:space:]]*$/) last--
+           for (i = first; i <= last; i++) print a[i]
+         }' "$body_file"
     echo
     echo '## Sources'
     awk -F'\t' '{ printf "- `%s` (%d)\n", $1, $2 }' "$work/modules.txt"

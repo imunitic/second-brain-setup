@@ -227,6 +227,11 @@ Three deliberate properties:
 - **An unusable baseline says so.** No `commit` field, or a commit absent from local history after a
   force-push, dropped rebase or shallow clone, reports itself and points at `stale`. Diffing against a
   commit that is not in this history would either fail or, worse, appear to work.
+- **Silence means the graph matches the worktree.** Context — how far behind the upstream ref, how many
+  commits since a baseline — is printed only next to an actual finding. Being behind upstream with an
+  accurate graph is a git fact rather than drift, and reporting it unconditionally would make silence
+  useless as a signal. On a divergent baseline the one-directional commit count is suppressed too,
+  since the divergence line already gives both sides.
 
 Because `git hash-object` fingerprints the worktree rather than the commit, a node written from a
 dirty tree has an approximate baseline — the writer warns at the time, narrowly, on that node's own

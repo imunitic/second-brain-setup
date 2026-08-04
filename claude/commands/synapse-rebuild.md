@@ -60,7 +60,9 @@ when you are going to *stay* on the new branch for a while. Say which you are do
 
 Report what it says, in the human's terms, **before** touching anything: how far the baseline is from
 HEAD (and whether it is an ancestor at all), how many nodes are flagged in each class, and how many
-added paths need a decision. Silence means nothing to rebuild — say so and stop.
+added paths need a decision. Silence means nothing to rebuild — say so and stop, including when the
+repo is behind its upstream: drift prints that only alongside a finding, because an accurate graph
+plus unpulled commits is nothing to repair yet.
 
 Two answers change the plan:
 
@@ -106,7 +108,9 @@ counts drift printed. Then pick one of three strategies and **say which one you 
 
 **Reseat** — renames only, no content change. No reading at all. Recover the existing prose with
 `synapse-query.sh body "{Node}"`, drop its trailing `## Sources` block (the writer regenerates that),
-and write it back with the updated path list. The concept did not change; only paths moved. This also
+re-enumerate so the list holds the new paths, and write it back. Repeating this is safe: the writer
+trims the body's leading and trailing blank lines, so a reseat is idempotent rather than accreting
+padding each time. The concept did not change; only paths moved. This also
 works on a machine that never built the namespace, because the body came from the node itself rather
 than from a work-dir file.
 
