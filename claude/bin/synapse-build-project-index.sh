@@ -69,15 +69,35 @@ fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/synapse-pindex.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-urlencode_path() {
-    local seg out=() parts
-    local IFS='/'
-    read -ra parts <<< "$1"
-    for seg in "${parts[@]}"; do
-        out+=("$(jq -rn --arg s "$seg" '$s|@uri')")
-    done
-    local IFS='/'
-    echo "${out[*]}"
+
+# Every node's `summary` in one request, rather than one fetch per node. The field
+# is frontmatter, and the API can evaluate a frontmatter expression across the vault
+# and return just the value -- which is what its search endpoint is for. Fetching
+# whole notes to read one line each moved ~34 MB for 48 nodes on a large repository,
+# because a hub node's `sources` block is megabytes; this is a few kilobytes.
+#
+# The value arrives already parsed, so the YAML unescaping the old per-node reader
+# had to do (backslashes before quotes, on a sentinel to avoid mangling \\") is
+# gone with it.
+if ! curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
+        -H 'Content-Type: application/vnd.olrapi.jsonlogic+json' \
+        -X POST --data-binary '{"var": "frontmatter.summary"}' \
+        -o "$work/summaries.json" "https://127.0.0.1:$PORT/search/"; then
+    echo "synapse-build-project-index: the vault search request failed" >&2
+    exit 1
+fi
+# Interpolated rather than @tsv: @tsv escapes backslashes, so a summary mentioning
+# a path like C:\dir would arrive with the backslash doubled and nothing would undo
+# it. Tabs are squashed to spaces because they are the field separator here; a
+# summary is a single-line scalar, so newlines cannot occur.
+jq -r --arg pfx "synapse/$REPO_NAME/" '
+    .[]? | select(.filename | startswith($pfx))
+    | (.filename | ltrimstr($pfx) | rtrimstr(".md")) as $n
+    | (.result | tostring | gsub("\t"; " ")) as $v
+    | "\($n)\t\($v)"
+' "$work/summaries.json" > "$work/summaries.tsv" || {
+    echo "synapse-build-project-index: could not read the search response" >&2
+    exit 1
 }
 
 # One `title<TAB>count<TAB>summary` line per node, sorted by title -- alphabetical
@@ -90,32 +110,19 @@ while IFS= read -r title_file; do
     link="$(printf '%s' "$title" | tr '/:*?"<>|' '_')"
     count="$(wc -l < "$LISTS/$nn.txt" | tr -d ' ')"
 
-    if ! curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
-            -H "Accept: text/markdown" -o "$work/node.md" \
-            "https://127.0.0.1:$PORT/vault/$(urlencode_path "synapse/$REPO_NAME/$link.md")"; then
-        echo "synapse-build-project-index: node not in the vault: $link.md" >&2
-        echo "  the index is built from the nodes, so write them first" >&2
+    summary="$(awk -F'\t' -v n="$link" '$1 == n { print $2; exit }' "$work/summaries.tsv")"
+    if [[ -z "$summary" ]]; then
+        # The search returns only notes whose summary is set, so an absent row means
+        # either no node or no summary. A stat separates them, because the two need
+        # different fixes and the old code distinguished them.
+        if [[ ! -f "$VAULT/synapse/$REPO_NAME/$link.md" ]]; then
+            echo "synapse-build-project-index: node not in the vault: $link.md" >&2
+            echo "  the index is built from the nodes, so write them first" >&2
+        else
+            echo "synapse-build-project-index: no summary field on $link.md" >&2
+        fi
         exit 1
     fi
-    summary="$(awk '
-        NR == 1 && $0 == "---" { fm = 1; next }
-        fm && $0 == "---" { exit }
-        fm && index($0, "summary:") == 1 {
-            sub(/^summary:[[:space:]]*/, "")
-            gsub(/^"|"$/, "")
-            # Unescape the double-quoted scalar the writer produced. Escaped
-            # backslashes are parked on a sentinel first: unescaping \" before \\
-            # would turn the sequence \\" into a stray quote.
-            gsub(/\\\\/, "\001")
-            gsub(/\\"/, "\"")
-            gsub(/\001/, "\\")
-            print
-            exit
-        }' "$work/node.md")"
-    [[ -n "$summary" ]] || {
-        echo "synapse-build-project-index: no summary field on $link.md" >&2
-        exit 1
-    }
     printf '%s\t%s\t%s\n' "$link" "$count" "$summary" >> "$work/bullets.tsv"
 done < <(find "$LISTS" -name '*.title' | LC_ALL=C sort)
 

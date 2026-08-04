@@ -114,8 +114,9 @@ case "$method" in
     case "$url" in
       */search/*)
         field="$(printf '%s' "$data" | sed -n 's/.*"frontmatter\.\([A-Za-z_][A-Za-z0-9_]*\)".*/\1/p')"
-        [ -n "${FAKE_CURL_VAULT_DIR:-}" ] && [ -n "$field" ] || { echo '[]'; exit 0; }
-        FIELD="$field" ROOT="$FAKE_CURL_VAULT_DIR" python3 - <<'PYEOF'
+        emit() { if [ -n "$outfile" ]; then cat > "$outfile"; else cat; fi; }
+        [ -n "${FAKE_CURL_VAULT_DIR:-}" ] && [ -n "$field" ] || { echo '[]' | emit; exit 0; }
+        FIELD="$field" ROOT="$FAKE_CURL_VAULT_DIR" python3 - <<'PYEOF' | emit
 import json, os, pathlib, re
 root, field = pathlib.Path(os.environ["ROOT"]), os.environ["FIELD"]
 out = []
@@ -126,8 +127,13 @@ for f in sorted(root.rglob("*.md")):
     # scalar: `field: value`
     m = re.search(rf"(?m)^{re.escape(field)}:[ \t]*(.+)$", fm)
     if m and m.group(1).strip():
-        out.append({"filename": str(f.relative_to(root)),
-                    "result": m.group(1).strip().strip('"')})
+        v = m.group(1).strip()
+        if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+            # Unescape the double-quoted scalar, as a real YAML parser does before
+            # the API hands the value over. Backslashes first, parked on a sentinel:
+            # unescaping \" ahead of \\ turns the sequence \\" into a stray quote.
+            v = v[1:-1].replace("\\\\", "\x00").replace('\\"', '"').replace("\x00", "\\")
+        out.append({"filename": str(f.relative_to(root)), "result": v})
         continue
     # list of maps: `field:` then `  - path: ...` / `    lines: ...` / `    digest: ...`
     m = re.search(rf"(?m)^{re.escape(field)}:[ \t]*$\n((?:[ \t]+.*\n)+)", fm)
