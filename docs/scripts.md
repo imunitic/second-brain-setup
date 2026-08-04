@@ -131,9 +131,10 @@ HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
 When to use which, and why any of this is a script: docs/synapse-graph.md.
 
 Exit codes:
-  0 - ran successfully. Empty output from `stale`/`drift` means clean; `drift`
-      prints context (commits behind, commits since baseline) only alongside a
-      finding, so silence means the graph matches the worktree.
+  0 - ran successfully. Empty output means clean for every reporting subcommand:
+      `stale`, `drift`, `grounding` and `links --check`. `drift` prints context
+      (commits behind, commits since baseline) only alongside a finding, so its
+      silence means the graph matches the worktree rather than that it gave up.
   1 - could not run (missing dependency, no vault, no namespace, remote
       mismatch, unknown node). Treat as "no information", never as "clean".
   2 - usage error (unknown subcommand, bad flag, unsupported field)

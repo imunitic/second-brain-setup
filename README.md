@@ -74,7 +74,9 @@ blocks.
   `sources` is invisible to a hash comparison by definition), reports renames as reseatable rather
   than as deletions, and costs one `git diff` per distinct baseline rather than a hash of every
   tracked file. `grounding` re-slices each recorded piece of evidence and distinguishes *moved* (fixable
-  by re-pointing, no reading) from *changed* (a claim to re-check). None of them ever pull. `body`
+  by re-pointing, no reading) from *changed* (a claim to re-check). `links` derives the typed relation
+  graph a node's `## Links` section records — outbound, inbound, transitive closure, and `--check` for
+  targets that resolve to no node, which Obsidian renders silently. None of them ever pull. `body`
   prints a node's fenced prose, `sources` its file list filtered/counted/grouped by module, `field`
   one frontmatter scalar. A script rather than direct reads because a hub node's `sources` is ~38k
   tokens and `_index.json` ~350k — everything a script reads internally is free, only its stdout
