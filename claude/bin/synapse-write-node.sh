@@ -13,6 +13,16 @@
 #   --body     file holding the authored prose (## Summary / ## Crux / ## Links).
 #              `## Sources` and the generated fences are added by this script.
 #
+# The body must not contain crux code. It points instead:
+#
+#   <!-- crux: crates/matcher/src/lib.rs 412-419 -->     slice these lines
+#   <!-- crux: none -->                                  no single span carries it
+#
+# This script cuts the text out of the file, fences it with a language guessed
+# from the extension, appends a `path:start-end` provenance line, and records
+# `crux_path`/`crux_lines` in frontmatter. The path must be one the node claims
+# and the range must be under 20 lines, or the write is refused.
+#
 # Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 # need the network sandbox disabled, or curl fails with exit 7 and no message.
 #
@@ -209,6 +219,76 @@ awk '{
 END { for (m in count) printf "%s\t%d\n", m, count[m] }' "$work/paths.txt" \
     | LC_ALL=C sort > "$work/modules.txt"
 
+# --- crux: the body points, this script slices ------------------------------
+# The body carries `<!-- crux: <path> <start>-<end> -->` (or `<!-- crux: none -->`)
+# and never the code itself, so a crux cannot be a paraphrase of the source that
+# merely looks like a quote. Adopted from Graft, which has the model return line
+# numbers and cuts the text at write time. An HTML comment because an unexpanded
+# directive then renders as nothing rather than as a broken code block.
+crux_path=""
+crux_lines=""
+crux_directive="$(grep -m1 -oE '<!--[[:space:]]*crux:[^>]*-->' "$body_file" || true)"
+if [[ -n "$crux_directive" ]]; then
+    crux_arg="$(printf '%s' "$crux_directive" \
+        | sed -E 's/^<!--[[:space:]]*crux:[[:space:]]*//; s/[[:space:]]*-->$//')"
+    if [[ "$crux_arg" == "none" ]]; then
+        : > "$work/crux.md"
+        printf '_No single span carries this node'\''s logic._\n' > "$work/crux.md"
+    else
+        # `path start-end`, with L-prefixes tolerated on either bound.
+        crux_path="${crux_arg%%[[:space:]]*}"
+        crux_range="${crux_arg##*[[:space:]]}"
+        crux_range="${crux_range//L/}"
+        crux_start="${crux_range%%-*}"
+        crux_end="${crux_range##*-}"
+        [[ "$crux_path" != "$crux_arg" && "$crux_start" =~ ^[0-9]+$ && "$crux_end" =~ ^[0-9]+$ ]] || {
+            echo "synapse-write-node: bad crux directive: $crux_directive" >&2
+            echo "  expected: <!-- crux: path/to/file.ext 412-419 -->  (or 'none')" >&2
+            exit 1
+        }
+        # The crux must quote a file the node actually claims. Without this a node
+        # could cite code it does not cover, which is the failure the pointer is
+        # meant to make impossible.
+        grep -qxF "$crux_path" "$work/paths.txt" || {
+            echo "synapse-write-node: crux path is not in this node's sources: $crux_path" >&2
+            exit 1
+        }
+        [[ -f "$REPO_ROOT/$crux_path" ]] || {
+            echo "synapse-write-node: crux path does not exist: $crux_path" >&2
+            exit 1
+        }
+        total="$(wc -l < "$REPO_ROOT/$crux_path" | tr -d ' ')"
+        (( crux_start >= 1 && crux_end >= crux_start && crux_end <= total )) || {
+            echo "synapse-write-node: crux range $crux_start-$crux_end outside $crux_path (1-$total)" >&2
+            exit 1
+        }
+        (( crux_end - crux_start < 20 )) || {
+            echo "synapse-write-node: crux range $crux_start-$crux_end is $((crux_end - crux_start + 1)) lines; keep it under 20" >&2
+            echo "  a crux is the few lines carrying the decision, not the whole function" >&2
+            exit 1
+        }
+        case "$crux_path" in
+            *.java) lang=java ;; *.kt|*.kts) lang=kotlin ;; *.rs) lang=rust ;;
+            *.py) lang=python ;; *.ts|*.tsx) lang=typescript ;; *.js|*.mjs|*.cjs) lang=javascript ;;
+            *.go) lang=go ;; *.rb) lang=ruby ;; *.sh|*.bash) lang=bash ;;
+            *.ml|*.mli) lang=ocaml ;; *.sql) lang=sql ;; *.xml) lang=xml ;;
+            *.yml|*.yaml) lang=yaml ;; *.json) lang=json ;; *) lang="" ;;
+        esac
+        {
+            printf '```%s\n' "$lang"
+            sed -n "${crux_start},${crux_end}p" "$REPO_ROOT/$crux_path"
+            printf '```\n'
+            printf '— `%s`:%s-%s\n' "$crux_path" "$crux_start" "$crux_end"
+        } > "$work/crux.md"
+        crux_lines="$crux_start-$crux_end"
+    fi
+    # Substitute the directive line for the sliced block, in place.
+    awk -v marker="$crux_directive" -v f="$work/crux.md" '
+        index($0, marker) { while ((getline line < f) > 0) print line; close(f); next }
+        { print }' "$body_file" > "$work/body-expanded.md"
+    body_file="$work/body-expanded.md"
+fi
+
 built_at="$(date '+%Y-%m-%d %H:%M')"
 
 # --- assemble the note ------------------------------------------------------
@@ -232,6 +312,12 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
     # and-list is exactly how `set -e` kills a script by surprise.
     if [[ -n "$node_commit" ]]; then
         printf 'commit: %s\n' "$node_commit"
+    fi
+    # The pointer as well as the sliced text: this is what lets a later check
+    # re-slice the same range and compare, rather than trusting the stored quote.
+    if [[ -n "$crux_path" ]]; then
+        printf 'crux_path: %s\n' "$crux_path"
+        printf 'crux_lines: "%s"\n' "$crux_lines"
     fi
     echo '---'
     echo

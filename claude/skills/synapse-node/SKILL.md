@@ -91,8 +91,9 @@ needs one.
    - **Prefer patching the prose from the diff over re-reading the node's sources.** If the node has a
      `commit` and only a small fraction of its files changed, read the current prose
      (`synapse-query.sh body`), get `git diff --name-status -M <commit>..HEAD` for its paths, and read
-     hunks only for a bounded selection — always including whatever file the `crux` quotes. Amend the
-     sentences the diff contradicts and keep the rest verbatim. A node covering 15,000 files where 12
+     hunks only for a bounded selection — always including `crux_path`, the file the crux was cut from.
+     Amend the sentences the diff contradicts and keep the rest verbatim. A node covering 15,000 files
+     where 12
      changed already has prose encoding the other 14,988, and re-reading them all both costs enormously
      and discards findings the diff has nothing to say about. Project the diff as carefully as
      `sources`: names first, `--stat` to size it, hunks only for the selection.
@@ -106,6 +107,13 @@ needs one.
    - Re-author `## Summary`, `## Crux` and `## Links` to match what the files contain now, into
      `$W/body.md`. Re-check the node's one-line `summary` as well; keep the existing one with
      `synapse-query.sh field "{Node title}" summary` if it still fits.
+   - **`## Crux` goes back as a directive, never as the code you just read.** `synapse-query.sh body`
+     returns the *expanded* crux — the fenced block the writer sliced last time — so copying it forward
+     stores a quote of an older version of the file as though it were current. Emit
+     `<!-- crux: <path> <start>-<end> -->` and let the writer cut it out again. Reuse the recorded
+     pointer (`synapse-query.sh field "{Node}" crux_path` and `crux_lines`) when that file did not
+     change; pick a fresh span when it did, because the old line numbers may now land somewhere else.
+     `<!-- crux: none -->` if nothing focal remains — and a node with no `crux_path` had none already.
    - **Write it back with the script:**
 
      ```sh

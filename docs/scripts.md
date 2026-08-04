@@ -170,6 +170,16 @@ Usage: synapse-write-node.sh --title <t> --summary <s> --paths <file> --body <fi
   --body     file holding the authored prose (## Summary / ## Crux / ## Links).
              `## Sources` and the generated fences are added by this script.
 
+The body must not contain crux code. It points instead:
+
+  <!-- crux: crates/matcher/src/lib.rs 412-419 -->     slice these lines
+  <!-- crux: none -->                                  no single span carries it
+
+This script cuts the text out of the file, fences it with a language guessed
+from the extension, appends a `path:start-end` provenance line, and records
+`crux_path`/`crux_lines` in frontmatter. The path must be one the node claims
+and the range must be under 20 lines, or the write is refused.
+
 Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 need the network sandbox disabled, or curl fails with exit 7 and no message.
 

@@ -21,6 +21,14 @@ common_setup() {
   export HOME="$TEST_HOME"
   export ORIGINAL_HOME_UNUSED=1 # documents that $HOME is intentionally swapped for the test
 
+  # Stop git's repo discovery from ascending out of the scratch dir. Needed
+  # because $TMPDIR is honoured above, and a TMPDIR that happens to live inside
+  # a git repo (e.g. ~/.emacs.d/var/tmp) makes every scratch directory look like
+  # part of that repo -- so a test asserting "this is not a git repo" passes or
+  # fails depending on the machine. The ceiling is $TEST_HOME itself, which is
+  # above $REPO, so discovery from inside the test repo still finds it first.
+  export GIT_CEILING_DIRECTORIES="$TEST_HOME"
+
   cat > "$HOME/.claude/second-brain.conf" <<EOF
 OBSIDIAN_VAULT_DIR="$VAULT"
 EOF

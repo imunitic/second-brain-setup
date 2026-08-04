@@ -137,6 +137,22 @@ against the node's own line count, and use `synapse-query.sh sources "{Node}" --
 count drift's numbers are relative to. Then pick one of three strategies and **say which one you
 picked and why**:
 
+**Restore the crux directive before writing any node back.** `synapse-query.sh body` returns the
+*expanded* crux — the fenced code the writer sliced — not the directive that produced it. Writing that
+straight back stores a quote of a file as it looked at the old baseline, presented as if it were
+current. So rebuild the directive from the pointer the writer recorded:
+
+```sh
+~/.claude/bin/synapse-query.sh field "{Node}" crux_path
+~/.claude/bin/synapse-query.sh field "{Node}" crux_lines
+```
+
+and replace the fenced block with `<!-- crux: <crux_path> <crux_lines> -->` so it is cut from the
+current file. One judgment goes with it: re-slicing the same range is only safe if that file did not
+change. If it did, the line numbers may now point at something else entirely — treat the crux as
+needing a fresh pointer, exactly as the prose needs a fresh sentence. A node with no `crux_path` had
+`none`, and stays that way.
+
 **Reseat** — renames only, no content change. No reading at all. Recover the existing prose with
 `synapse-query.sh body "{Node}"`, drop its trailing `## Sources` block (the writer regenerates that),
 re-enumerate so the list holds the new paths, and write it back. Repeating this is safe: the writer
@@ -213,9 +229,10 @@ is indistinguishable, from the outside, from one that did nothing.
   that was wrong when the node was *built* survives every future patch untouched — the diff has
   nothing to say about a statement that was never true. Patching is therefore only as good as the
   baseline prose, and a node's most likely error is not drift but an explanation invented at build
-  time. Two things follow. A `crux` that is a **verbatim quote** is the one part of a node that can be
-  checked mechanically against the source, so a paraphrased crux forfeits the only cheap correctness
-  check the format has. And a sentence asserting a *mechanism* ("X is behind a mutex, which is why Y")
+  time. The `crux` is no longer the exposure it was — `synapse-write-node.sh` slices it out of the
+  file from a `<!-- crux: path start-end -->` directive, so it is verbatim by construction rather than
+  by instruction. What remains unguarded is the prose. A sentence asserting a *mechanism* ("X is
+  behind a mutex, which is why Y")
   deserves more suspicion than one asserting structure — if the diff touches its file at all, verify
   it rather than carrying it over.
 - **Never write a node with an empty path list**, and never delete a node whose sources vanished — its

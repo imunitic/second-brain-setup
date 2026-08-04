@@ -481,3 +481,128 @@ make_layered_repo() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"not inside a git repo"* ]]
 }
+
+# --- crux: the body points, the writer slices -------------------------------
+# The whole reason this exists: a crux the model types can be a paraphrase that
+# merely looks like a quote. A crux the script cuts out of the file cannot be.
+
+# A repo whose line numbers are unambiguous, so a wrong slice is obvious rather
+# than plausible.
+make_crux_repo() {
+  make_repo
+  mkdir -p "$REPO/lib"
+  { for i in $(seq 1 30); do printf 'let line%02d = %d\n' "$i" "$i"; done; } > "$REPO/lib/calc.ml"
+  git -C "$REPO" add lib/calc.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m calc
+  printf 'src/foo.ml\nlib/calc.ml\n' > "$PATHS"
+}
+
+@test "crux: the pointed-at lines are sliced from the file, verbatim" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml 5-7 -->\n' > "$BODY"
+
+  run run_write --title "Sliced" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  local f; f="$(node_file Sliced)"
+  grep -qxF 'let line05 = 5' "$f"
+  grep -qxF 'let line07 = 7' "$f"
+  ! grep -qxF 'let line04 = 4' "$f"
+  ! grep -qxF 'let line08 = 8' "$f"
+  grep -qxF '```ocaml' "$f"
+  grep -qF '— `lib/calc.ml`:5-7' "$f"
+  ! grep -qF '<!-- crux:' "$f"
+}
+
+@test "crux: the pointer is recorded in frontmatter, not just the sliced text" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml L11-L13 -->\n' > "$BODY"
+
+  run run_write --title "Recorded" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  grep -qxF 'crux_path: lib/calc.ml' "$(node_file Recorded)"
+  grep -qxF 'crux_lines: "11-13"' "$(node_file Recorded)"
+  grep -qxF 'let line11 = 11' "$(node_file Recorded)"
+}
+
+@test "crux: 'none' is an honest answer, not a missing field" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: none -->\n' > "$BODY"
+
+  run run_write --title "NoCrux" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  local f; f="$(node_file NoCrux)"
+  grep -qF 'No single span carries' "$f"
+  ! grep -q '^crux_path:' "$f"
+  ! grep -qF '<!-- crux:' "$f"
+}
+
+@test "crux: a path the node does not claim is refused" {
+  make_crux_repo
+  printf 'let z = 1\n' > "$REPO/lib/other.ml"
+  git -C "$REPO" add lib/other.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m other
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/other.ml 1-1 -->\n' > "$BODY"
+
+  run run_write --title "Foreign" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not in this node's sources"* ]]
+  [ ! -f "$(node_file Foreign)" ]
+}
+
+@test "crux: a range past the end of the file is refused, not clamped" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml 28-40 -->\n' > "$BODY"
+
+  run run_write --title "Overrun" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"outside lib/calc.ml (1-30)"* ]]
+  [ ! -f "$(node_file Overrun)" ]
+}
+
+@test "crux: a range longer than ~20 lines is refused" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml 1-25 -->\n' > "$BODY"
+
+  run run_write --title "TooBig" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"25 lines"* ]]
+  [ ! -f "$(node_file TooBig)" ]
+}
+
+@test "crux: a malformed directive is refused rather than silently ignored" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml -->\n' > "$BODY"
+
+  run run_write --title "Malformed" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"bad crux directive"* ]]
+  [ ! -f "$(node_file Malformed)" ]
+}
+
+@test "crux: a body with no directive is written unchanged" {
+  make_crux_repo
+  run run_write --title "Plain" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  ! grep -q '^crux_path:' "$(node_file Plain)"
+  grep -qF 'part_of [[Other]]' "$(node_file Plain)"
+}
+
+@test "crux: re-pointing after the file changed re-slices, rather than keeping the old quote" {
+  make_crux_repo
+  printf '## Summary\nA node.\n\n## Crux\n<!-- crux: lib/calc.ml 5-6 -->\n' > "$BODY"
+  run run_write --title "Repointed" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  grep -qxF 'let line05 = 5' "$(node_file Repointed)"
+
+  # The file changes under the node: line 5 now says something else entirely.
+  sed -i '' 's/^let line05 = 5$/let line05 = 999 (* CHANGED *)/' "$REPO/lib/calc.ml"
+  git -C "$REPO" add lib/calc.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m change
+
+  # Writing the SAME directive back must reflect the new content, which is the whole
+  # point of storing a pointer: a rebuild re-cuts instead of carrying a stale quote.
+  run run_write --title "Repointed" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  grep -qF 'let line05 = 999 (* CHANGED *)' "$(node_file Repointed)"
+  ! grep -qxF 'let line05 = 5' "$(node_file Repointed)"
+}

@@ -280,17 +280,36 @@ emit into tool calls than read into a window. Never hand-author those.
    - **`built_at`:** machine local time (`date '+%Y-%m-%d %H:%M'`) — never inferred.
    - **`stale`:** `false` — freshly built.
    - **Body:** `summary` (plain-English, the explanation a senior engineer would give walking
-     someone through this subsystem), `crux` (the few lines that carry the actual logic, stored as
-     *text*, not line numbers — line numbers drift, quoted text survives it), `links` (typed
+     someone through this subsystem), `crux` (the few lines that carry the actual logic — **authored
+     as line numbers, stored as text**: you point, the writer slices, so composing is impossible at
+     authoring time and nothing decays afterwards the way a stored line number would), `links` (typed
      Obsidian wikilinks to other nodes in this same namespace: `depends_on`, `part_of`, `uses`, or
      another type that fits better if one doesn't), a `## Sources` section, and an empty `## Notes`
      section.
-   - **The `crux` must be copied, never composed.** A paraphrase that merely looks like code
-     (`trait Matcher { /* no engine assumptions */ }`) reads fine and is worth nothing: the crux is
-     the only field in a node that can be checked against the source mechanically, and inventing it
-     forfeits that for the node's whole lifetime. If no short passage carries the logic, quote the
-     module's own doc comment instead of writing a plausible-looking substitute — an honest quote of
-     something adjacent beats a fabricated quote of the thing itself.
+   - **Never write crux code. Point at it and let the writer cut it out.** In the body, emit a
+     directive instead of a code block:
+
+     ```
+     ## Crux
+     <!-- crux: crates/matcher/src/lib.rs 412-419 -->
+     ```
+
+     `synapse-write-node.sh` slices those lines out of the file, fences them with a language guessed
+     from the extension, appends a `path:start-end` provenance line, and records `crux_path` /
+     `crux_lines` in frontmatter. It refuses the write if the path is not one the node claims, if the
+     range runs past the end of the file, or if the span reaches 20 lines.
+
+     This exists because a typed crux can be a paraphrase that merely *looks* like a quote — the
+     invented `trait Matcher { /* no engine assumptions */ }` reads perfectly and is worth nothing. A
+     rule saying "quote, don't compose" depends on compliance; pointing makes composing impossible,
+     which is the same mechanics-are-scripts move as the rest of the write path.
+
+   - **`<!-- crux: none -->` is a real answer — use it.** A trivial data holder, a one-line
+     delegation, or logic spread evenly with no focal point genuinely has no crux, and a subsystem
+     node often has none either. A required field with no honest answer is exactly how a fabricated
+     one appears, so say `none` rather than picking a span to fill the slot. If something adjacent is
+     worth quoting instead, point at the module's own doc comment — that is an honest quote of
+     something nearby, not a fabricated quote of the thing itself.
    - **Prefer claims about structure over claims about mechanism.** "These three printers implement
      the sink interface" is checkable and stays true; "the parallel path shares a printer behind a
      mutex, which is why output stays coherent" is the kind of causal story that is easy to assemble
@@ -335,9 +354,9 @@ emit into tool calls than read into a window. Never hand-author those.
    {plain-English explanation}
 
    ## Crux
-   ```{lang}
-   {the few lines that carry the actual logic, quoted verbatim}
-   ```
+   <!-- crux: {path a source line below claims} {start}-{end} -->
+   {or `<!-- crux: none -->` when no single span carries it. The writer replaces
+    this directive with the sliced code, so never write the code here yourself.}
 
    ## Links
    - depends_on [[Other Node Title]]

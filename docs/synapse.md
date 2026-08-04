@@ -38,8 +38,9 @@ authoritative structure), and writes:
   `synapse/{repo-name}/{Node Title}.md`. Each carries `sources` (**every** file the node covers, as
   a repo-relative path + `git hash-object` fingerprint), `sources_digest` (sha256 over the `LC_ALL=C`
   sorted `path:hash` lines, so "has this node changed" is one comparison rather than N), a
-  plain-English `summary`, a `crux` (the few lines that carry the actual logic, stored as quoted text
-  so it survives line drift, not line numbers), typed `links` to other nodes, an aggregated
+  plain-English `summary`, a `crux` (the few lines that carry the actual logic — **authored as a
+  pointer, stored as text**; see "The crux is sliced, not typed" below), typed `links` to other nodes,
+  an aggregated
   `## Sources` mirror, and a `## Notes` section preserved verbatim across every future regeneration.
 
 - `_index.json` — a derived, machine-only reverse index (source path → owning node filenames, plus
@@ -143,6 +144,35 @@ Worth stating plainly, because conflating the two produces a real bug — trimmi
   `<!-- synapse:generated:end -->`. Regeneration replaces only the bytes between those markers and
   re-emits everything outside verbatim — which is the mechanism behind the `## Notes` guarantee.
   Without a fence, "preserved verbatim" is a promise with nothing enforcing it.
+
+### The crux is sliced, not typed
+
+The body never contains crux code. It carries a directive — `<!-- crux: path/to/file.ext 412-419 -->`,
+or `<!-- crux: none -->` — and `synapse-write-node.sh` cuts those lines out of the file, fences them
+with a language guessed from the extension, appends a `path:start-end` provenance line, and records
+`crux_path`/`crux_lines` in frontmatter. The write is refused if the path is not one the node claims,
+if the range runs off the end of the file, or if the span reaches 20 lines.
+
+The reason is the difference between a rule and a mechanism. A crux that a model *types* can be a
+paraphrase that merely looks like a quote — `trait Matcher { /* no engine assumptions */ }` reads
+perfectly, cites nothing, and is indistinguishable from a real quote to anyone who does not go and
+check. An instruction to quote rather than compose depends on compliance and cannot be verified. A
+crux the *script* cuts cannot be composed at all. This is the same mechanics-are-scripts split that
+`manifest.tsv` draws for clustering, applied to the one field where fabrication is both easiest and
+least visible: the model points, the script quotes. (Borrowed from Graft, which has the model return
+line numbers per definition and slices the text at write time.)
+
+Storing the sliced text rather than the pointer is deliberate, and the two choices are not in tension.
+Line numbers decay as a file changes, so a node that stored only `412-419` would silently come to cite
+something else. Resolving the pointer **once, at write time**, and keeping the text gives both
+properties at once: impossible to fabricate when authored, immune to line drift once stored. The
+pointer is kept alongside so a rebuild can re-slice deliberately rather than carrying an old quote
+forward — see `/synapse-rebuild`, which reconstructs the directive from `crux_path`/`crux_lines`.
+
+`none` is a first-class answer. A trivial data holder, a one-line delegation, or logic spread evenly
+across a subsystem genuinely has no focal span, and a node covering a whole module often has none. A
+required field with no honest answer is precisely how an invented one appears, so the format offers a
+way to say so.
 
 ## What a session is told at startup
 
