@@ -167,8 +167,9 @@ fetch_node() { # fetch_node <node>
 # the value per note, via its JsonLogic search endpoint. This is the right tool
 # for the job in the API's own terms -- full-text search, frontmatter queries and
 # graph traversal are what it exists for -- and it is also the cheap way round:
-# reading `grounded_in` by fetching whole nodes moved 34 MB across 48 requests on
-# syrius3 to obtain 14 lines, because a hub node's `sources` block is megabytes.
+# reading `grounded_in` by fetching whole nodes moved 34 MB across 48 requests on a
+# large repository to obtain 14 lines, because a hub node's `sources` block is
+# megabytes.
 # One request, under a kilobyte back.
 #
 # Only notes where the field is truthy come back, which is exactly the set worth

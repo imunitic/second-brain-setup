@@ -129,14 +129,14 @@ catalogue_lines() {
   make_repo
   write_vault_index
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
-  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
-  write_foreign_namespace "syrius-querschnitt-basis" "ssh://git@example.com/qst.git"
+  write_foreign_namespace "mono-repo" "ssh://git@example.com/mono-repo.git"
+  write_foreign_namespace "shared-lib" "ssh://git@example.com/shared-lib.git"
 
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Other Synapse namespaces in this vault"* ]]
-  [[ "$output" == *"syrius3|ssh://git@example.com/syrius3.git"* ]]
-  [[ "$output" == *"syrius-querschnitt-basis|ssh://git@example.com/qst.git"* ]]
+  [[ "$output" == *"mono-repo|ssh://git@example.com/mono-repo.git"* ]]
+  [[ "$output" == *"shared-lib|ssh://git@example.com/shared-lib.git"* ]]
   # own namespace excluded -- it already got the verified pointer above
   [ "$(catalogue_lines | cut -d'|' -f1 | grep -cx "$(repo_name)" || true)" = "0" ]
 }
@@ -181,24 +181,24 @@ catalogue_lines() {
   local outside="$TEST_HOME/not-a-repo"
   mkdir -p "$outside"
   write_vault_index
-  write_foreign_namespace "fw-core" "ssh://git@example.com/fw.git"
-  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
+  write_foreign_namespace "core-lib" "ssh://git@example.com/core-lib.git"
+  write_foreign_namespace "mono-repo" "ssh://git@example.com/mono-repo.git"
 
   run run_hook "$outside"
   [ "$status" -eq 0 ]
   # nothing to exclude, so both appear
-  [[ "$output" == *"fw-core|"* ]]
-  [[ "$output" == *"syrius3|"* ]]
+  [[ "$output" == *"core-lib|"* ]]
+  [[ "$output" == *"mono-repo|"* ]]
   [[ "$output" != *"Synapse namespace for this repo"* ]]
 }
 
 @test "catalogue: emitted even when the vault has no Index.md to inject" {
   make_repo
-  write_foreign_namespace "syrius3" "ssh://git@example.com/syrius3.git"
+  write_foreign_namespace "mono-repo" "ssh://git@example.com/mono-repo.git"
 
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"syrius3|"* ]]
+  [[ "$output" == *"mono-repo|"* ]]
 }
 
 @test "the stop-nudge hook cites a CLAUDE.md heading that actually exists" {
