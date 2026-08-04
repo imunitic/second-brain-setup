@@ -1,10 +1,10 @@
-# Synapse: the per-repo code graph
+# Synapse Graph: the per-repo code graph
 
 Claude Code re-explores a codebase from scratch every session — grep a term, open a file, follow
-an import, back out, try again — and whatever it learns dies with the session. Synapse is a small,
-LLM-authored map of a repo's subsystems (summary + crux + typed links per concept), hosted in the
-second brain vault instead of a repo-local folder, so it's global across every project and
-searchable the same way any other note is. It's inspired by
+an import, back out, try again — and whatever it learns dies with the session. The Graph is a small,
+LLM-authored map of a repo's subsystems (summary + crux + typed links per concept), hosted in
+[Synapse Vault](second-brain.md) instead of a repo-local folder, so it's global across every project
+and searchable the same way any other note is. It's inspired by
 [NanoNets/Graft](https://github.com/NanoNets/Graft) but deliberately much smaller in scope — single
 consumer (Claude Code only), no multi-agent wiring, no standing CLI surface.
 

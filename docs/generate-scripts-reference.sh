@@ -28,14 +28,15 @@ esac
 # The one-line purpose is the comment above `# Usage:`; the rest is the help text.
 render() {
     cat <<'EOF'
-# Script reference
+# Synapse Tools: script reference
 
 Generated from the header block of each script by `docs/generate-scripts-reference.sh`
 — the same text the script prints for `--help`. Do not edit by hand; run the
 generator, or `--check` it, which the test suite does.
 
-Design rationale is not here: see [synapse.md](synapse.md) for why these exist and
-how they fit together, and [second-brain.md](second-brain.md) for the vault layout.
+Design rationale is not here: see [synapse.md](synapse.md) for the Graph these
+scripts build and why they exist at all, and [second-brain.md](second-brain.md) for
+the Vault that hosts it.
 
 EOF
     local f name

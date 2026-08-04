@@ -8,7 +8,7 @@ either concludes with nothing to build, or compiles into a single tracked checkl
 ## `/sb-design-note`: the discussion
 
 Free-form, no fixed step order — same philosophy as a private, repo-local design note, except this
-one lives in the vault's `designs/` folder instead of a repo's gitignored `docs/notes/`, so it's
+one lives in the Vault's `designs/` folder instead of a repo's gitignored `docs/notes/`, so it's
 findable from any project immediately. Every note is tagged with both a title (`{PROJECT} —
 {Topic}`) and a `project: {prefix}` frontmatter field, resolved once per project and cached in
 `~/.claude/second-brain-projects.conf` (machine-local, never committed, so personal and work

@@ -1,11 +1,15 @@
-# The Second Brain
+# Synapse Vault
 
 A permanent, curated knowledge base — an Obsidian vault — that persists across every project and
 every session, separate from (and complementary to) Claude Code's own `~/.claude` auto-memory
-system. Auto-memory is for *how to work with this user*; the second brain is for durable,
-browsable notes about the work itself.
+system. Auto-memory is for *how to work with this user*; the Vault is for durable, browsable notes
+about the work itself.
 
-![Second brain overview](diagrams/second-brain-overview.png)
+It is also the host for [Synapse Graph](synapse.md), which stores its per-repo code graphs here as
+ordinary notes under `synapse/{repo-name}/` rather than in a folder of their own. One store, one
+search, one sync concern.
+
+![Synapse Vault overview](diagrams/second-brain-overview.png)
 
 ## The vault
 
@@ -57,7 +61,7 @@ are derived per session and stored nowhere — see [synapse.md](synapse.md) for 
 
 **`Stop` → `second-brain-stop-nudge.sh`**
 A turn-count-based nudge, firing every 25 turns, asking: *did anything in this stretch belong in
-the second brain and not get written down?* This exists because "remember to write notes" is
+the Vault and not get written down?* This exists because "remember to write notes" is
 exactly the shape of standing instruction that's easy to silently forget under task pressure — a
 periodic, mechanical prompt is more reliable than trusting recall alone.
 

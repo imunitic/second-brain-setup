@@ -1,7 +1,7 @@
 # Copy this to ~/.claude/second-brain-projects.conf (setup.sh does this for you).
 #
 # Known project -> task-prefix mappings for THIS machine only. Deliberately
-# separate from the portable second-brain-setup package (never committed
+# separate from the portable Synapse package (never committed
 # there, never copied between machines) so contexts that shouldn't mix
 # (e.g. personal vs. work projects) never end up in the same file.
 #

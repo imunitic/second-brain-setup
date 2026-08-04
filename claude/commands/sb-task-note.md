@@ -73,7 +73,7 @@ duplicate that scaffolding here, just supply its inputs:
   which reads/appends `~/.claude/second-brain-projects.conf`), so supply it directly instead of
   re-deriving or re-asking. Never hardcode a specific project/prefix pair in this command's own
   instructions — the conf file is machine-local and deliberately outside the portable
-  second-brain-setup package, so projects from unrelated contexts (e.g. personal vs. work) must
+  Synapse package, so projects from unrelated contexts (e.g. personal vs. work) must
   never end up in the same place.
 - **Body:** the checklist from "Compiling the checklist" above, under the single top-level heading —
   exactly the structure `sb-task`'s "Task file structure" requires (no `## Step` sub-headings).

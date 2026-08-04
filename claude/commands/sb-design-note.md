@@ -58,7 +58,7 @@ reading the same file:
    resolved pair to the conf file.
 
 Never hardcode a specific project/prefix pair in this command's own instructions — the conf file is
-machine-local and deliberately outside the portable second-brain-setup package, so projects from
+machine-local and deliberately outside the portable Synapse package, so projects from
 unrelated contexts (e.g. personal vs. work) never end up in the same place.
 
 ## Handling Arguments

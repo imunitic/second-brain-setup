@@ -52,7 +52,7 @@ Triggered when `--task` is given but the title doesn't match `{prefix}-\d+`.
 The known project/prefix pairs live in a plain local file, `~/.claude/second-brain-projects.conf`
 (one `project-name=prefix` line each) — read/appended with the Read/Edit tools, not the `obsidian`
 MCP server, since it's outside the vault. It is deliberately **not** part of the portable
-second-brain-setup package and never copied between machines, so contexts that shouldn't mix (e.g.
+Synapse package and never copied between machines, so contexts that shouldn't mix (e.g.
 personal vs. work projects) never end up in the same file. It's self-managed — this command appends
 newly resolved pairs to it — but also plain text, so the user can add, fix, or remove a line by hand
 at any time.
