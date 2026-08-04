@@ -23,12 +23,17 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # npm rather than apt/brew: it gives the same bats version on both runners,
       # and the distro packages lag far enough behind to differ from each other.
+      # Into a user prefix rather than the system one: a plain `npm install -g` is
+      # writable on the macOS runner but EACCES on Linux, and using sudo on one
+      # platform only is how the two configurations start drifting apart.
       - name: Install bats
-        run: npm install -g bats
+        run: |
+          npm install -g --prefix "$HOME/.npm-global" bats
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
 
       - name: Show versions
         run: |
