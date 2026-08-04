@@ -68,57 +68,77 @@ needs one.
    `synapse-query.sh sources "{Node}" --count|--modules|--filter <p>` for what it covers, and
    `synapse-query.sh field "{Node}" <key>` for a single scalar such as `stale` or `built_at`.
 
-4. **Regeneration (only if step 1 or 2 found the node stale):**
-   - For each of the node's current `sources` files, try `~/.claude/bin/synapse-tags.sh {path}`
-     first (exit 0 means use the tags directly, exit 1 means fall back to reading the file, exit 2
-     means run the discovery procedure `/synapse-init` documents, then retry). This keeps the
-     tag-derived structural signal as fresh as the rest of the node, not just accurate at first
-     init.
-   - Re-read the node's current `sources` files from disk (in full, regardless of what the tags
-     signal gave — that signal informs regrouping decisions, it never substitutes for actually
-     reading a file before rewriting its summary/crux prose).
-   - Rewrite `## Summary`, `## Crux`, and `## Links` to match what the files actually contain now
-     — same judgment `/synapse-init` used to write them the first time.
-   - **Rewrite only the fenced region.** Everything the generator owns sits between
-     `<!-- synapse:generated:start -->` and `<!-- synapse:generated:end -->`. The write is:
-     read the file, replace *only* the bytes between those markers, re-emit everything outside them
-     verbatim. That is the mechanism behind the `## Notes` guarantee — "preserved verbatim" is
-     otherwise a promise with nothing enforcing it, and a whole-body rewrite is exactly how Notes
-     content gets silently destroyed.
-   - **`## Notes` is human-authored only.** Never write into it — not at regeneration, not at build
-     time, not to record what you just did. It exists for a human to write in, and it lives outside
-     the fence so the mechanism above already protects it. (Task notes in `projects/` are a different
-     artifact: the `sb-task` skill *does* append there. Do not carry that habit into a Synapse node.)
-   - Recompute `git hash-object` for **every** source, update `sources` in frontmatter, and recompute
-     `sources_digest` (sha256 over the `LC_ALL=C` sorted `path:hash` lines, newline-joined, no
-     trailing newline — the definition pinned in `/synapse-init`, which `synapse-query.sh stale` must be
-     able to reproduce exactly).
-   - Rewrite `## Sources` as the **aggregated** human mirror: one line per owning directory or module
-     with a file count, `LC_ALL=C` sorted — not a path list. The exhaustive list lives in frontmatter
-     for search; a reader wants to know which modules are involved, not to scroll 941 paths.
-   - Set `stale: false`, `built_at` to machine local time (`date '+%Y-%m-%d %H:%M'`, never
-     inferred).
-   - Write the updated node back, then use the freshly regenerated content for whatever prompted this
-     read. **Never write frontmatter with `vault_patch` at `targetType: frontmatter`** — it
-     re-serialises the whole YAML block and YAML-coerces values (verified: an all-digit `hash` became
-     `1.1111111111111112e+39`). Read-modify-write the file instead.
+4. **Regeneration (only if step 1 or 2 found the node stale).** You re-author the prose; a script
+   writes the file. Everything mechanical — hashes, `sources_digest`, the `## Sources` mirror,
+   `built_at`, `commit`, `stale: false`, and preserving `## Notes` — belongs to
+   `synapse-write-node.sh`, because a hub node's `sources` can no more be *emitted* into a tool call
+   than read into a window. Let `$W` be the project's work directory,
+   `~/.claude/synapse-work/{repo-name}/`.
+
+   - **Get the node's path list into a file, never into context:**
+
+     ```sh
+     ~/.claude/bin/synapse-query.sh sources "{Node title}" > "$W/paths.txt"
+     ```
+
+     If `$W/manifest.tsv` exists (or the namespace has `_manifest.tsv`), prefer re-running
+     `~/.claude/bin/synapse-build-lists.sh` instead and use the regenerated `lists/NN.txt`: it
+     re-derives every list from the clustering patterns, so files *added* since the last build are
+     picked up automatically rather than sitting in `_unassigned`. `synapse-query.sh sources` can only
+     return what the node already claims.
+   - Consult `synapse/{project}/_profile.txt` if it exists — the aggregations that proved useful for
+     this repo, and the negative results (searches that came back empty) worth not re-deriving.
+   - For the files that matter, try `~/.claude/bin/synapse-tags.sh {path}` first (exit 0 use the tags,
+     exit 1 fall back to reading the file, exit 2 run the discovery procedure `/synapse-init`
+     documents, then retry). Then read the load-bearing files in full — the tags signal informs
+     regrouping, it never substitutes for reading a file before rewriting its prose.
+   - Re-author `## Summary`, `## Crux` and `## Links` to match what the files contain now, into
+     `$W/body.md`. Re-check the node's one-line `summary` as well; keep the existing one with
+     `synapse-query.sh field "{Node title}" summary` if it still fits.
+   - **Write it back with the script:**
+
+     ```sh
+     ~/.claude/bin/synapse-write-node.sh --title "{Node title}" --summary "{one line}" \
+        --paths "$W/paths.txt" --body "$W/body.md"
+     ```
+
+     It replaces only the generated region and re-emits everything after the closing fence verbatim,
+     which is what makes the `## Notes` guarantee enforceable rather than a promise.
+   - **Never hand-write the frontmatter**, with `vault_patch` at `targetType: frontmatter` or
+     otherwise. Two reasons, both load-bearing: that patch re-serialises the whole YAML block and
+     YAML-coerces values (verified: an all-digit `hash` became `1.1111111111111112e+39`), and
+     enumerating fields by hand is how `summary` and `commit` get silently dropped — which then breaks
+     the next `synapse-build-project-index.sh` run, far from the cause.
+   - **`## Notes` is human-authored only.** Never write into it — not at regeneration, not to record
+     what you just did. (Task notes in `projects/` are a different artifact: the `sb-task` skill *does*
+     append there. Do not carry that habit into a Synapse node.)
+   - If the node's `summary` or title changed, rebuild the index so the map matches:
+     `~/.claude/bin/synapse-build-project-index.sh`.
    - **Say out loud that a regeneration happened** — e.g. "Node '{title}' was stale, regenerated
      before use." This has real latency and token cost, unlike Tier 1/2's detection; it must never
      be absorbed silently into the read.
 5. **Unassigned sweep (rides along on step 4, whenever any regeneration fires for this project):**
-   - Read `synapse/{project}/_index.json`'s `_unassigned` array. Empty → nothing to do, skip
-     silently (an empty sweep isn't worth announcing).
+   - Read the bucket with a shell command, not into context — `_index.json` runs to tens of megabytes:
+
+     ```sh
+     jq -r '._unassigned[]' "$OBSIDIAN_VAULT_DIR/synapse/{project}/_index.json"
+     ```
+
+     Empty → nothing to do, skip silently (an empty sweep isn't worth announcing).
    - Otherwise read `synapse/{project}/Index.md` for the current node list (titles + summaries).
    - For each unassigned path, try `~/.claude/bin/synapse-tags.sh {path}` first as a fast
      pre-classification signal (same exit-code handling as Regeneration above), falling back to a
-     full read for ambiguous cases, then classify against that node list:
-     - **Fits an existing node** → append it (path + fresh `git hash-object`) to that node's
-       `sources`, and set *that* node's `stale: true` for its own next read — do not regenerate it
-       immediately as part of this sweep, only the node that triggered step 4 gets regenerated
-       right now.
-     - **Fits nothing** → leave it in `_unassigned`.
-     - Update `_index.json` to reflect either outcome (move the key out of `_unassigned` into the
-       claiming node's entry, or leave as-is).
+     full read for ambiguous cases, then classify against that node list. **The judgment is which
+     cluster a path belongs to; the bookkeeping is not yours to do:**
+     - **Fits an existing node** → widen that node's line in `$W/manifest.tsv` so the pattern claims
+       it, then re-run `synapse-build-lists.sh`. Set that node's `stale: true` for its own next read
+       rather than regenerating it now — only the node that triggered step 4 is regenerated
+       immediately. If there is no manifest, add the path to that node's list file instead.
+     - **Fits nothing** → leave it unassigned. A genuinely new subsystem wants its own manifest line
+       and its own node, which is `/synapse-init` work, not a sweep.
+     - Then rebuild the projection with `~/.claude/bin/synapse-build-index.sh`. **Never hand-edit
+       `_index.json`** — it is derived, and at tens of megabytes it cannot be rewritten through a tool
+       call anyway.
    - **Announce every outcome**, same transparency rule as regeneration: which file, and which
      node it was attached to (or that it's still unassigned).
    - Sweep the **whole** bucket unconditionally, not just entries related to the node that
@@ -133,6 +153,8 @@ needs one.
   edit is invisible to it and only the script catches those.
 - Never hand-roll the verification by reading `sources` or `_index.json` — that is the whole reason
   the script exists, and doing it manually costs tens to hundreds of thousands of tokens.
+- Never hand-write a node's frontmatter or `## Sources` mirror. `synapse-write-node.sh` owns them, and
+  writing them by hand both cannot scale to a hub node and silently drops `summary`/`commit`.
 - Never treat the script's exit 1 as a clean result. It means the check could not run.
 - Never regenerate a node that neither the script nor its `stale:` flag named — regeneration is real
   cost, reserved for actual staleness.

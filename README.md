@@ -22,9 +22,13 @@ Obsidian Sync, iCloud, manual copy — your call).
 - **Synapse** — a per-repo semantic code graph hosted in the vault under `synapse/{repo-name}/`,
   so Claude Code doesn't re-explore a codebase from scratch every session. Dormant until
   `/synapse-init` is run in a repo.
-  - `claude/commands/synapse-init.md` — first-time build (per-file-summary-then-cluster pass into
-    node notes + the two derived projections) and the manual `_unassigned`-sweep fallback for an
-    already-initialized, otherwise-dormant repo.
+  - `claude/commands/synapse-init.md` — first-time build (an orientation pass, then clustering into a
+    `manifest.tsv`, then node notes plus the two derived projections) and the manual
+    `_unassigned`-sweep fallback for an already-initialized, otherwise-dormant repo. The division it
+    enforces: deciding *what the nodes are* and writing their prose is the model's; enumerating,
+    hashing, digesting and writing is the scripts'. `manifest.tsv` (`title <TAB> include-ERE <TAB>
+    exclude-ERE`) is the seam, which is why coverage comes out as a printed number rather than a
+    claim.
   - `claude/hooks/synapse-staleness.sh` — `PostToolUse` (`Write|Edit|MultiEdit`) Tier 1: flags
     edited files' nodes `stale` (or queues a brand-new file into `_unassigned`) via the Local REST
     API directly, no MCP round-trip.
@@ -37,6 +41,23 @@ Obsidian Sync, iCloud, manual copy — your call).
     by module, `field` one frontmatter scalar. A script rather than direct reads because a hub node's
     `sources` is ~38k tokens and `_index.json` ~350k — everything a script reads internally is free,
     only its stdout costs tokens.
+  - `claude/bin/synapse-build-lists.sh` — enumerates tracked files (dropping binaries, lockfiles,
+    minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
+    printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
+    Works out of `$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo-name}/` — never the repo,
+    since these scripts run from inside it.
+  - `claude/bin/synapse-write-node.sh` — writes one node: hashes every source, computes
+    `sources_digest`, records the baseline `commit`, builds the aggregated `## Sources` mirror, and
+    PUTs it, re-emitting everything after the closing fence verbatim so `## Notes` survives. Refuses
+    to write into a namespace whose `remote` belongs to a different repo. The caller supplies only
+    prose: the "never a context read" rule is symmetric, and a hub node's `sources` can no more be
+    emitted into a tool call than read into a window.
+  - `claude/bin/synapse-push-nodes.sh` — loops the writer over every node that has both a path list
+    and an authored `b-NN.md`, taking each node's one-line `summary` from that file's frontmatter.
+  - `claude/bin/synapse-build-index.sh` — builds `_index.json`, the reverse index the Tier 1 hook
+    reads (source path → owning node filenames, plus `_unassigned`).
+  - `claude/bin/synapse-build-project-index.sh` — builds `Index.md`, reading each bullet's headline
+    back from that node's own `summary` field, so the map cannot describe a node as it used to be.
   - `claude/bin/synapse-tags.sh` — optional tree-sitter acceleration for clustering/regeneration/the
     `_unassigned` sweep: looks up a file's extension in a self-populating grammar registry
     (`~/.claude/synapse-grammars.conf`), clones/builds a native grammar on first need, and prints
@@ -108,17 +129,27 @@ check, and the other-namespaces catalogue — pure git/filesystem, no
 network), `synapse-staleness.sh`
 (Tier 1 staleness flagging, with `tests/fixtures/fake-bin/curl` stubbing
 out the Obsidian Local REST API so no real vault or plugin is needed),
-and `synapse-tags.sh` (registry lookup, exit-code contract, and
+`synapse-tags.sh` (registry lookup, exit-code contract, and
 clone/registration idempotency, with `tests/fixtures/fake-bin/{tree-sitter,git}`
 stubbing out the real CLI and grammar cloning so no network access or
-tree-sitter install is needed). Every test runs against a throwaway
-`$HOME`/git repo/vault created in `tests/test_helper.bash` — nothing here
-touches your real `~/.claude` or vault.
+tree-sitter install is needed), and the five node-building scripts
+(`synapse-build-lists.sh`, `synapse-write-node.sh`, `synapse-push-nodes.sh`,
+`synapse-build-index.sh`, `synapse-build-project-index.sh`) both individually
+and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
+four-step build against a throwaway repo and reads the result back through
+`synapse-query.sh`. `sources_digest` is recomputed independently in Python
+rather than by reusing a script's own formula, so a drift between the writer
+and the verifier fails a test instead of silently agreeing with itself. Every
+test runs against a throwaway `$HOME`/git repo/vault created in
+`tests/test_helper.bash` — nothing here touches your real `~/.claude` or vault.
 
 Not covered by these tests: `claude/commands/synapse-init.md` and
 `claude/skills/synapse-node/SKILL.md` are natural-language procedures
 Claude follows, not code — there's nothing for a test framework to
-execute there.
+execute there. That split is deliberate rather than a gap: those two
+documents hold the judgment (what the nodes are, what their prose says),
+and everything they delegate to a script is what the suite covers. If a
+step in either can be tested, it belongs in a script instead.
 
 ## Dependencies
 

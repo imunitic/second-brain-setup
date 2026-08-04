@@ -26,6 +26,13 @@
 #            hook no longer issues these against node frontmatter (that call
 #            re-serialises the whole YAML block and YAML-coerces values); a
 #            patches.log appearing in a staleness test is now a regression.
+#
+# The writer scripts (synapse-write-node.sh and the two index builders) check the
+# HTTP status instead of relying on curl's exit code, calling
+# `curl -o FILE -w '%{http_code}' -X PUT`. So a PUT honours -w by printing a
+# status (overridable via $FAKE_CURL_PUT_STATUS, e.g. 500 to exercise the failure
+# path) and honours -o by writing a response body there. Printing only when -w was
+# actually passed keeps the older callers, which expect silence on PUT, unchanged.
 set -euo pipefail
 
 : "${FAKE_CURL_LOG:?FAKE_CURL_LOG must be set}"
@@ -38,11 +45,13 @@ url="${args[$((n-1))]}"
 method="GET"
 data=""
 outfile=""
+writefmt=""
 for ((i = 0; i < n; i++)); do
   case "${args[$i]}" in
     -X) method="${args[$((i+1))]}" ;;
     --data-binary|--data-raw) data="${args[$((i+1))]}" ;;
     -o) outfile="${args[$((i+1))]}" ;;
+    -w) writefmt="${args[$((i+1))]}" ;;
   esac
 done
 
@@ -85,22 +94,34 @@ case "$method" in
     fi
     ;;
   PUT)
-    case "$vault_path" in
-      *_index.json)
-        if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
-          write_payload_to "$FAKE_CURL_CAPTURE_DIR/index-put.json"
-        fi
+    put_status="${FAKE_CURL_PUT_STATUS:-200}"
+    case "$put_status" in
+      2*)
+        case "$vault_path" in
+          *_index.json)
+            if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
+              write_payload_to "$FAKE_CURL_CAPTURE_DIR/index-put.json"
+            fi
+            ;;
+          *)
+            if [ -n "${FAKE_CURL_VAULT_DIR:-}" ]; then
+              write_payload_to "$FAKE_CURL_VAULT_DIR/$vault_path"
+            fi
+            if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
+              mkdir -p "$FAKE_CURL_CAPTURE_DIR"
+              printf '%s\n' "$vault_path" >> "$FAKE_CURL_CAPTURE_DIR/node-puts.log"
+            fi
+            ;;
+        esac
+        [ -n "$outfile" ] && printf '{"message":"OK"}' > "$outfile"
         ;;
       *)
-        if [ -n "${FAKE_CURL_VAULT_DIR:-}" ]; then
-          write_payload_to "$FAKE_CURL_VAULT_DIR/$vault_path"
-        fi
-        if [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ]; then
-          mkdir -p "$FAKE_CURL_CAPTURE_DIR"
-          printf '%s\n' "$vault_path" >> "$FAKE_CURL_CAPTURE_DIR/node-puts.log"
-        fi
+        # Simulated rejection: the payload is deliberately NOT stored, so a test
+        # asserting the failure path also proves nothing was written.
+        [ -n "$outfile" ] && printf '{"message":"Simulated failure","errorCode":%s}' "$put_status" > "$outfile"
         ;;
     esac
+    [ -n "$writefmt" ] && printf '%s' "$put_status"
     ;;
   PATCH)
     [ -n "${FAKE_CURL_CAPTURE_DIR:-}" ] || exit 0

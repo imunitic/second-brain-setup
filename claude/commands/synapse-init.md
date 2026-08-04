@@ -67,33 +67,107 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
 
 ## First-time build
 
-1. **Enumerate files:** `git ls-files` from the repo root — tracked files only, which gets
-   `.gitignore` exclusion for free and matches what's actually worth summarizing (build output,
-   dependencies, etc. are never tracked). Drop obvious binary/generated files a repo-relative
-   `.gitattributes`-style judgment call would also drop (images, lockfiles with no prose value,
-   `dist/`-style build output that somehow got tracked) — use judgment, this doesn't need to be
-   exhaustive.
+**Two kinds of work, and the seam between them.** Everything here is either *mechanics* — fixed,
+language-agnostic, and already implemented as a tested script — or *interpretation*, which is
+yours and cannot be scripted because what counts as signal differs per codebase.
 
-   **Skip submodule gitlinks.** `git ls-files` reports a submodule as a single entry, but it is a
-   directory on disk — `git hash-object` fails on it and takes the whole batch down with it. Its
-   contents belong to another repo, which can have its own namespace, so it never belongs in
-   `sources`. Do **not** synthesise a hash from `git ls-files -s` instead: that would leave the
-   writer and `synapse-query.sh stale` using different commands for one entry, which is exactly the
-   kind of asymmetry that produces a permanent false positive. Detect with a plain
-   "is this a regular file" test rather than parsing `.gitmodules`.
+- **Mechanics (do not reimplement inline):** `synapse-build-lists.sh` (enumerate + expand a
+  manifest + prove coverage), `synapse-write-node.sh` (hash, digest, `## Sources` mirror, PUT),
+  `synapse-push-nodes.sh`, `synapse-build-index.sh`, `synapse-build-project-index.sh`.
+
+**The work directory** defaults to `~/.claude/synapse-work/{repo-name}/`, created on demand, and
+holds `manifest.tsv`, `all.txt`, `lists/`, the authored `b-NN.md` bodies and the coverage files. Override with `$SYNAPSE_WORK_DIR` if you need to. Two things never to do: point it
+at the repo (these scripts run from inside the repo, so its working files would land in the user's
+checkout) or at the vault (Obsidian would index a file list that runs to six figures of lines).
+It is deliberately persistent rather than a temp dir, so a later run finds the previous manifest
+instead of re-deriving the clustering.
+- **Interpretation (only you can do this):** deciding what the nodes *are*, and writing their prose.
+
+The seam is **`manifest.tsv`** — `title <TAB> include-ERE <TAB> exclude-ERE`, one line per node.
+Your judgment goes in as a few dozen regexes; everything downstream of that file is mechanical and
+verifiable. Note the practical consequence: a node's `sources` is exhaustive by construction
+because a script expands it, so the "never a context read" rule holds in **both** directions — a
+125k-file namespace is ~10 MB of frontmatter plus a ~29 MB `_index.json`, which you can no more
+emit into tool calls than read into a window. Never hand-author those.
+
+1. **Enumerate files** — mechanics, run `synapse-build-lists.sh` (it does this step and step 4's
+   expansion together, and reports coverage). It enumerates `git ls-files` from the repo root —
+   tracked files only, which gets
+   `.gitignore` exclusion for free and matches what's actually worth summarizing (build output,
+   dependencies, etc. are never tracked), and it drops binary/generated files — images, compiled
+   objects, packages, archives, media, model weights, lockfiles, minified bundles and source maps.
+   Those lists are grouped by *what a file is* rather than by ecosystem, so they are not JVM- or
+   web-specific; add repo-specific noise through `$SYNAPSE_EXTRA_EXCLUDE_RE` (it appends to the
+   defaults) rather than editing the script.
+
+   **Submodule gitlinks are skipped for you**, but know why, because it explains a failure you will
+   otherwise meet: `git ls-files` reports a submodule as a single entry, but it is a directory on
+   disk — `git hash-object` fails on it and takes the whole batch down with it. Its contents belong
+   to another repo, which can have its own namespace, so it never belongs in `sources`. The
+   detection is a plain "is this a regular file" test rather than parsing `.gitmodules`, and a hash
+   is never synthesised from `git ls-files -s`: that would leave the writer and
+   `synapse-query.sh stale` using different commands for one entry, which is exactly the kind of
+   asymmetry that produces a permanent false positive.
 2. **Read hint files, if present:** `CLAUDE.md` and `README.md` at the repo root. These bias the
    clustering pass in step 4 — they are never treated as authoritative structure, and the pass can
    and should diverge from them if the files themselves disagree. No other project-specific doc
    convention (e.g. a `docs/design/` folder) gets this treatment — see the design note's
    Alternatives for why that was rejected.
-3. **Per-file summary pass:** for each enumerated file, first try `~/.claude/bin/synapse-tags.sh
-   {path}` (only if the C-compiler check above passed) — its def/ref output is often enough signal
-   for clustering on its own, cutting straight to step 4 for that file without a full read. Fall
-   back to actually reading the file (as before) whenever the script exits non-zero for a reason
-   *other* than "needs discovery" (see "Tree-sitter acceleration" below for that case), or whenever
-   the tags output alone isn't enough to judge what the file is for. Either way, produce a short
-   internal summary of what it contains/does — scaffolding for clustering, not the node output
-   itself, don't write these anywhere.
+3. **Orientation pass — interpretation, and the step nothing can do for you.** The goal is not a
+   summary of every file; it is learning *where meaning lives in this particular tree* well enough
+   to cluster it and then write about it. Four questions, in order. They are language-agnostic; how
+   you answer each one is not, and deducing that on the spot is the work:
+
+   1. **Where is the weight?** Group paths by module/directory and count. Tells you which
+      subsystems are large enough to deserve a node and which must be grouped with a neighbour.
+   2. **What kind of artifact dominates?** Group by extension and count, per candidate cluster.
+      This is the cheapest source of genuine surprise — a cluster that is 60% JSON or `.bpmn` or
+      `.sql` is telling you something no module name will.
+   3. **What does the code call itself, versus what the directory calls it?** Derive the code's own
+      namespace roots (Java/Kotlin packages, Rust `mod`/crate paths, Go packages, Python modules,
+      OCaml library names, TS path aliases) and compare them with the directory names. **Divergences
+      here are the highest-value findings in the whole build** and they are invisible from the
+      filesystem: a module named one thing whose code is uniformly named another means every later
+      search for the wrong term returns nothing.
+   4. **What are the domain's verbs?** The exported/public symbol names — they read as the
+      vocabulary of the domain, and clusters of related names (a state machine, a configuration
+      family) are what a node's prose should be about.
+
+   **Answer these with aggregate shell over the path lists, not by reading files.** Reading is
+   internal and free; only what you print costs tokens, so a 15,000-file cluster should collapse to
+   a few dozen lines before you read anything. Then read 2–4 specific files per node — the ones the
+   aggregates pointed at — for the `crux` quote and to confirm a hypothesis.
+
+   `synapse-tags.sh {path}` is available for question 4 in any language with a tree-sitter grammar
+   (see the exit codes below). **It takes one file per invocation, ~0.07s warm, so it cannot be run
+   over a whole cluster** — 15,000 files is ~18 minutes, and a 100k-file repo runs into hours. Which
+   means any use of it needs a sampling rule, and every fixed rule is biased in a way you must
+   choose deliberately: alphabetical is an accident, largest-file favours generated code and
+   god-classes, "files under an `api/` directory" bakes in a naming convention this repo may not
+   share, and most-referenced needs the full scan you were avoiding. **State the rule you picked and
+   why, or skip question 4** — a truncated symbol list looks authoritative and is worthless.
+
+   **When an aggregation is worth repeating, write it down rather than retyping it.** Once you have
+   run the same one-liner for the third cluster, record it in `synapse/{repo-name}/_profile.txt` — a
+   machine-only sibling of `_index.json`, never a node — as a fenced command plus one line on what
+   it revealed about *this* repo. **Read it, don't execute it:** it is a record of the aggregations
+   that earned their keep, so a later run applies the commands itself rather than shelling out to a
+   script fetched from a notes vault. Begin any re-run by reading it, and improve it rather than
+   re-deriving from scratch. Nothing like it ships, because which aggregations carry signal depends
+   on the codebase — a distributed one would encode the wrong ecosystem's conventions.
+
+   `.txt`, with markdown formatting inside, for a measured reason: Obsidian indexes `.md` files as
+   notes, so a `_profile.md` turns up in search, Quick Switcher and the graph, where it is pure noise
+   to a human reading notes. A non-`.md` extension is invisible to all of those and still perfectly
+   readable. Note the `_` prefix does *nothing* mechanically — it is only a hint to a human who sees
+   the file, matching `_index.json`. Record **negative results** here too ("this abbreviation has no
+   expansion anywhere in the repo"); a saved shell script cannot hold a search that came back empty,
+   which is the main reason this is prose rather than an executable.
+
+   **Small repos are the easy case:** under a few thousand files you can afford a genuine per-file
+   pass — `synapse-tags.sh` first, falling back to reading the file whenever it exits non-zero for a
+   reason other than "needs discovery", or whenever the tags alone don't say what the file is for.
+   Do that when you can; the four questions above are what to do when you can't.
 
    **Tree-sitter acceleration — handling `synapse-tags.sh`'s exit codes:**
    - **Exit 0:** use the printed tags directly as clustering signal for this file.
@@ -136,16 +210,62 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
         tree-sitter grammar for `.rs`, falling back to full reads"), then retry
         `synapse-tags.sh {path}` now that the registry has an entry (falls back to a full read for
         this file per the Exit 1 case above if discovery came up empty).
-4. **Cluster into nodes:** group the per-file summaries into a few dozen readable nodes, not one
-   per file — same density Graft aims for. A node is a subsystem or concept, not a file; a file may
-   legitimately belong to more than one node's `sources` when it's genuinely load-bearing for two
-   concepts (many-to-many is intentional, not an oversight). Use the `CLAUDE.md`/`README.md`
-   content read in step 2 as a bias on grouping and naming, never as a boundary the files
-   themselves don't support.
-5. **Write each node.** For every cluster, write `synapse/{repo-name}/{Node Title}.md`:
+4. **Cluster into nodes — write `manifest.tsv`, the seam.** Group what you learned into a few dozen
+   readable nodes, not one per file — same density Graft aims for. A node is a subsystem or concept,
+   not a file; a file may legitimately belong to more than one node's `sources` when it's genuinely
+   load-bearing for two concepts (many-to-many is intentional, not an oversight). Use the
+   `CLAUDE.md`/`README.md` content read in step 2 as a bias on grouping and naming, never as a
+   boundary the files themselves don't support.
+
+   Express each cluster as one line in `$SYNAPSE_WORK_DIR/manifest.tsv`:
+
+   ```
+   title <TAB> include-ERE <TAB> exclude-ERE
+   ```
+
+   Then run `synapse-build-lists.sh` and **read the coverage report it prints.** `covered` +
+   `unassigned` must account for `enumerated`; anything unclaimed lands in `unassigned.txt` and
+   flows into `_index.json`'s `_unassigned`. Iterate the manifest until the split is deliberate
+   rather than accidental — a regex slip like `config$` (which matches only a file literally named
+   `config`, not the directory) shows up here as a count, which is the entire reason this step is a
+   file plus a script instead of a judgement you make silently.
+
+   Keep the manifest: it is the reviewable record of a judgment call, and re-running or extending
+   the namespace later should start from it rather than re-deriving the clustering. Copying it to
+   `synapse/{repo-name}/_manifest.tsv` alongside `_index.json` is worth doing for any repo you
+   expect to revisit.
+5. **Write each node.** Author the prose only — put each node's content in
+   `$SYNAPSE_WORK_DIR/b-NN.md` (matching its `lists/NN.txt`), then run `synapse-push-nodes.sh`,
+   which calls `synapse-write-node.sh` per node. The contract below is what that writer implements
+   and what `synapse-query.sh stale` verifies; it is specified here because the two must agree
+   exactly, not because you should hand-build the file. A node lands at
+   `synapse/{repo-name}/{Node Title}.md`:
+
+   Each `b-NN.md` opens with its own one-line summary in frontmatter, so everything authored about a
+   node is in one file:
+
+   ```markdown
+   ---
+   summary: One line differentiating this node from its siblings.
+   ---
+
+   ## Summary
+   ...
+   ```
+
+   The driver strips that frontmatter and the line becomes the node's `summary` field, which step 7
+   reads back to build the index bullet. Write it *for the index* — it has to distinguish this node
+   from dozens of siblings, which is a different job from the node's opening sentence, whose job is
+   to orient someone already inside. A node without one is an error, not a default.
 
    - **Filename/title:** short, senior-engineer-style description of the concept (e.g. "World —
-     entity/component/resource core"). Sanitize filesystem-illegal characters (`/ : * ? " < > |`).
+     entity/component/resource core"). Filesystem-illegal characters (`/ : * ? " < > |`) are
+     sanitized — but **reword the title instead of relying on that**, because Obsidian resolves a
+     wikilink by *filename*, so `[[World — entity/component/resource core]]` silently resolves to
+     nothing once the file becomes `...entity_component_resource core.md`. A broken wikilink is a
+     valid link to a not-yet-existing note, so it fails quietly. The writer warns when a title needs
+     sanitizing; treat that warning as "rename this node". Same trap when you *retitle* a node
+     mid-build: inbound links already written keep pointing at the old name.
    - **`sources`:** **every** file the node covers — repo-relative path plus that file's
      `git hash-object <path>` output, run from the repo root at the moment of writing. Exhaustive,
      not a sample: this is a **machine** field, and it is what makes Obsidian's search able to reach
@@ -234,7 +354,8 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
 
    `project` is the repo name resolved above, not the task-prefix scheme.
 
-6. **Write `_index.json`:** `synapse/{repo-name}/_index.json`, mapping every source path used
+6. **Write `_index.json`** — mechanics, run `synapse-build-index.sh`. It emits
+   `synapse/{repo-name}/_index.json`, mapping every source path used
    above to the list of node **filenames, including the `.md` extension** (matching the design
    note's schema exactly, since the `PostToolUse` hook and the read-time procedure both use this
    value directly as a vault path with no extension-handling of their own) that claim it, plus an
@@ -251,8 +372,28 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
    }
    ```
 
-7. **Write `synapse/{repo-name}/Index.md`:** the per-project map — node titles, one-line
-   summaries, and `built_at`, plus the `remote` frontmatter field resolved above.
+7. **Write `synapse/{repo-name}/Index.md`** — mechanics, run `synapse-build-project-index.sh`. It
+   takes no prose from you at all: each bullet's headline is read back from that node's `summary`
+   frontmatter field, and the script computes the exact file count, the sanitized wikilink filename
+   and the `remote` field. Bullets come out sorted by title. Run it only after the nodes exist — it
+   fails loudly on a node that is missing or has no `summary`, both of which mean the namespace is
+   incomplete.
+
+   The result is the per-project map, and nothing more: **the index carries no repo-specific prose.**
+   That is not a limitation to work around. A convention worth explaining — a module-name/package-name
+   divergence, a layering rule, an overlay mechanism found during the orientation pass — is a
+   *concept*, and concepts are **nodes**. Written as a node it gets `sources` (so it is reachable by
+   searching any file that evidences it), staleness tracking when that evidence changes, and typed
+   links from the domains it affects. Written as index chrome it gets none of those. If the
+   orientation pass produced a finding a newcomer needs in the first five minutes, give it a node and
+   let that node's `summary` carry the headline.
+
+   **Then verify, before reporting success.** Three checks, all cheap:
+   - `synapse-query.sh stale` must print nothing. (40s for a 125k-file namespace.)
+   - Every `[[wikilink]]` in the namespace must resolve to a file that exists — extract them all and
+     test `-f "$link.md"`. Nothing else catches a broken link, since Obsidian treats it as a link to
+     a note not yet created.
+   - Every node file must appear in `Index.md`. An unlisted node exists but is invisible to a reader.
 
    ```yaml
    ---

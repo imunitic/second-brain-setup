@@ -19,8 +19,8 @@ nothing, forever.
 
 ## `/synapse-init`: first build
 
-Walks the repo's tracked files (`git ls-files`, so `.gitignore` exclusion is free), runs a
-per-file-summary-then-clustering pass biased by `CLAUDE.md`/`README.md` if present (hints, never
+Walks the repo's tracked files (`git ls-files`, so `.gitignore` exclusion is free), runs an
+orientation-then-clustering pass biased by `CLAUDE.md`/`README.md` if present (hints, never
 authoritative structure), and writes:
 
 - One node file per subsystem/concept — a few dozen per repo, not one per file — under
@@ -34,18 +34,89 @@ authoritative structure), and writes:
 - `_index.json` — a derived, machine-only reverse index (source path → owning node filenames, plus
   an `_unassigned` bucket for anything not yet claimed) that the cheap staleness hook can look up
   directly, without reasoning about anything.
-- `synapse/{repo-name}/Index.md` — the human/Claude-facing map: node titles, one-line summaries,
-  and a `remote` field (the repo's git remote, or its absolute path if it has none) used to detect
-  a rare same-basename collision between two unrelated repos.
+- `synapse/{repo-name}/Index.md` — the human/Claude-facing map: node titles, one-line summaries read
+  back from each node's own `summary` frontmatter field (so the index cannot describe a node as it
+  used to be), file counts, and a `remote` field (the repo's git remote, or its absolute path if it
+  has none) used to detect a rare same-basename collision between two unrelated repos.
 
 Re-running it on an already-initialized project doesn't rebuild anything — it's just the manual
 fallback for sweeping the `_unassigned` bucket, for a repo that's gone fully dormant with no other
 regeneration event to piggyback the sweep onto.
 
+### Mechanics are scripts; interpretation is the model. `manifest.tsv` is the seam.
+
+The division that keeps Synapse language-agnostic, and the test for where any future piece belongs:
+
+- **Mechanics — fixed, language-agnostic, tested.** Enumerating and proving coverage
+  (`synapse-build-lists.sh`), hashing + `sources_digest` + the `## Sources` mirror + the PUT
+  (`synapse-write-node.sh`, driven by `synapse-push-nodes.sh`), the reverse index
+  (`synapse-build-index.sh`), the project index (`synapse-build-project-index.sh`), and reading it
+  all back (`synapse-query.sh`). These have exact contracts — the digest definition must match
+  across the writer and the verifier or every node reports a false mismatch — and none of them can
+  know or care what language the repo is in.
+- **Interpretation — the model, and only the model.** What the nodes *are*, and what their prose
+  says. There is no language-neutral way to answer "where does meaning live in this tree": Java says
+  packages and `*Service` suffixes, Rust says crates and `pub`, Go says packages and exported
+  identifiers, Elixir says `defmodule`. A shipped script would have to pick one and be wrong
+  everywhere else.
+
+**`manifest.tsv` (`title <TAB> include-ERE <TAB> exclude-ERE`) is the interface between the two.**
+Judgment enters as a few dozen regexes; everything downstream is mechanical and verifiable, which is
+why coverage is a printed number rather than a claim. It also makes the judgment reviewable and
+re-runnable — a human can read 48 titles and regexes, and a later extension starts from the manifest
+instead of re-deriving the clustering.
+
+A corollary: **the "never a context read" rule is symmetric.** On a large monorepo a namespace runs
+to megabytes of node frontmatter and an `_index.json` in the tens of megabytes — quantities a model
+can no more *emit* into tool calls than *read* into a window. That, not tidiness, is why the write
+path is scripted at all.
+
+It is also why **no aggregation or profiling script ships.** "What is the signal in this tree?" is
+interpretation: a fixed script has to hardcode one ecosystem's conventions — JVM source roots and
+`*Service` suffixes, say, or Rust crate paths — and is then wrong everywhere else. `/synapse-init`
+carries a checklist instead (where is the weight, what artifact dominates, what does the code call
+itself versus what its directories call it, what are the domain's verbs), plus the instruction to
+record the aggregations that earned their keep in `synapse/{repo-name}/_profile.txt`. Same pattern as
+`synapse-tags.sh` with its `~/.claude/synapse-grammars.conf` registry: ship the language-agnostic
+primitive, let the per-language or per-repo specifics be discovered and cached.
+
+### Three per-repo artifacts, in two places
+
+- **`~/.claude/synapse-work/{repo-name}/`** — the work directory (`manifest.tsv`, `all.txt`,
+  `lists/`, authored node bodies, coverage files). Persistent, so a later run finds
+  the previous clustering. Deliberately *not* the repo — these scripts run from inside the repo, so a
+  `$PWD` default would drop megabytes of working files into a user's checkout — and *not* the vault,
+  which would put a six-figure-line file list into Obsidian's search index.
+- **`synapse/{repo-name}/_manifest.tsv`** — the clustering, copied into the vault because it is inert
+  data describing the graph, and a second machine should be able to extend the namespace without
+  re-deriving it.
+- **`synapse/{repo-name}/_profile.txt`** — the aggregations that proved useful for this repo, as
+  fenced commands with a line each on what they revealed, plus the **negative results** (a search
+  that came back empty is knowledge, and is the one thing a saved script cannot hold). **Read, never
+  executed:** vaults get synced, shared and restored from elsewhere, and "fetch code from the notes
+  vault and run it" is not a pattern worth establishing for something a model re-issues in seconds.
+  The knowledge worth keeping was never the bash — it was which aggregation to run and what it showed.
+
+Two conventions in those names, and only one of them does anything. The **extension** is load-bearing:
+Obsidian indexes `.md` as notes, so anything ending `.md` shows up in search, Quick Switcher and the
+graph, while a `.txt`/`.tsv`/`.json` sibling is invisible to all three and still fully readable by the
+tooling (verified by writing the same token both ways and searching for it). The **`_` prefix does
+nothing mechanically** — Obsidian has no notion of it; it is purely a signal to a human who sees the
+file in the explorer that nothing here is hand-edited. Dotfiles would hide these from the file
+explorer too, but that hides them from *you* as well, and some sync tools skip them — a poor trade for
+a file whose whole purpose is surviving to another machine.
+
+The one place this bites: `synapse-tags.sh` runs one file per invocation (~0.07s warm), so it cannot
+be swept across a large cluster — 15k files is ~18 minutes. Any use of it needs a sampling rule, and
+every fixed rule is biased (alphabetical is an accident, largest-file favours generated code,
+"under `api/`" bakes in a naming convention the repo may not share, most-referenced needs the full
+scan being avoided). `/synapse-init` therefore requires stating the rule chosen, or skipping that
+question — a truncated symbol list looks authoritative and is worthless.
+
 ### `sources` is a machine field; `## Sources` is its human mirror
 
-Worth stating plainly, because conflating the two produced a real bug (fw-core's first build trimmed
-`sources` to ~5 "representative" files per node to keep the frontmatter readable):
+Worth stating plainly, because conflating the two produces a real bug — trimming `sources` to a few
+"representative" files per node to keep the frontmatter readable:
 
 - **`sources` is exhaustive, and read by machines only.** It is what Obsidian's search index turns
   into a file → node lookup: searching a class name that appears in no node's prose still finds the

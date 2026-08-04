@@ -10,7 +10,9 @@ one matches what you're trying to understand.
 - **[synapse.md](synapse.md)** — the per-repo semantic code graph: the two-tier staleness model,
   `/synapse-init`, the `synapse-node` Tier 2 skill, `synapse-query.sh` (projected reads, so a node's
   exhaustive `sources` never enters a context window), and the optional tree-sitter acceleration
-  layer.
+  layer. Also the rule that keeps it language-agnostic — mechanics are scripts, interpretation is the
+  model, `manifest.tsv` is the seam — and why the "never a context read" constraint is symmetric,
+  which is what forces the write path to be scripted too.
 - **[design-task-workflow.md](design-task-workflow.md)** — the design-note → task-note pairing
   pipeline: `/sb-design-note`, `/sb-task-note`, the `sb-task` status-tracking skill, and the
   optional GitHub-issue mirror.
