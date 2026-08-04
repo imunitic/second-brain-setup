@@ -32,12 +32,22 @@ skill regenerates a node lazily when its body is actually needed, and `synapse-q
 cheap check that tells you whether anything more is warranted. This command exists for when the answer
 is clearly yes.
 
-**A branch switch deserves one decision before you start.** A namespace is keyed by repo basename and
-remote, so all branches of a repo share one. Rebuilding for a branch switch therefore *replaces* the
-graph you had for the other branch, and switching back means rebuilding again. If you hop between
-branches often, the cheaper choice is to leave the namespace built against your mainline and rely on
-drift's "not an ancestor of HEAD" warning to tell you the graph describes a different line. Rebuild
-when you are going to *stay* on the new branch for a while. Say which you are doing.
+**A large job is the expected outcome, not a warning sign.** On a monorepo with a hundred thousand
+files and heavy traffic, most of the graph moving at once is simply what the situation looks like, and
+forty nodes in *re-orient* is a normal shape for this command rather than a reason to hesitate. Nothing
+invokes this automatically — a human typed it, knowing their own repo and why they are here. So report
+the size, then **do the work**. Do not recommend against a rebuild on the grounds that it is expensive,
+do not offer a reduced version of it unasked, and do not describe replacing the graph as destructive:
+replacing it is the entire point. Volunteer a smaller option only where a *correctness* reason argues
+for one, and even then do the full job if the human says so.
+
+**One mechanical fact about branches, because it is not guessable.** A namespace is keyed by repo
+basename and remote, so every branch of a repo shares one. Rebuilding after a branch switch therefore
+*replaces* the graph rather than adding a second one, and switching back and rebuilding again is the
+normal way to return. Both standing habits are legitimate and the choice is already made by whoever
+typed the command: keep the graph permanently on your mainline and read drift's "not an ancestor of
+HEAD" warning as "this describes a different line", or rebuild at every switch so the graph always
+describes the checkout in front of you. Neither needs to be talked out of, or asked about.
 
 ## Prerequisites
 
