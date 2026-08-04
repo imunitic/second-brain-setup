@@ -37,7 +37,12 @@ Obsidian Sync, iCloud, manual copy — your call).
   - `claude/bin/synapse-query.sh` — read-only queries against a graph, printing only what was
     asked for. `stale` is the Tier 2 check (one `git hash-object` fork plus one GET per node,
     comparing each node's `sources_digest` against a recomputed one, printing only stale titles with
-    a reason). `body` prints a node's fenced prose, `sources` its file list filtered/counted/grouped
+    a reason). `drift` answers the question `stale` structurally cannot: it diffs each node's
+    recorded `commit` against HEAD, so it also sees **additions** (a path in no node's `sources` is
+    invisible to a hash comparison by definition), reports renames as reseatable rather than as
+    deletions, and costs one `git diff` per distinct baseline rather than a hash of every tracked
+    file. It never pulls — it reports how far behind the upstream ref already is and leaves fetching
+    to you. `body` prints a node's fenced prose, `sources` its file list filtered/counted/grouped
     by module, `field` one frontmatter scalar. A script rather than direct reads because a hub node's
     `sources` is ~38k tokens and `_index.json` ~350k — everything a script reads internally is free,
     only its stdout costs tokens.

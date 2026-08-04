@@ -11,8 +11,17 @@
 #   sources <node> --filter <pattern>  matching paths only (substring)
 #   field   <node> <key>               one top-level frontmatter scalar
 #   stale                              nodes whose files no longer match, with a reason
+#   drift                              what changed since each node's recorded commit
 #
 # <node> may be given with or without the trailing `.md`.
+#
+# `stale` and `drift` answer different questions and neither subsumes the other.
+# `stale` re-hashes what each node already claims, so it catches edited content but
+# is blind to files that were *added* -- a path in no node's `sources` cannot be
+# reported by definition. `drift` diffs each node's recorded `commit` against HEAD,
+# so it also sees additions, deletions and renames, and it costs one `git diff` per
+# distinct baseline rather than a hash of every tracked file. Neither pulls: `drift`
+# reports how far behind the upstream ref already is and leaves fetching to you.
 #
 # Why a script rather than something Claude does inline: a hub node's `sources`
 # frontmatter runs to ~38k tokens and `_index.json` to ~350k, so neither can
@@ -21,14 +30,14 @@
 # + curl, never a context read.
 #
 # Exit codes:
-#   0 - ran successfully (check stdout; empty output from `stale` means clean)
+#   0 - ran successfully (check stdout; empty output from `stale`/`drift` means clean)
 #   1 - could not run (missing dependency, no vault, no namespace, remote
 #       mismatch, unknown node). Treat as "no information", never as "clean".
 #   2 - usage error (unknown subcommand, bad flag, unsupported field)
 set -uo pipefail
 
 usage() {
-  sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -41,7 +50,7 @@ shift
 # run" (exit 1) for a typo'd subcommand just because Obsidian happens to be
 # down would send the caller looking in the wrong place entirely.
 case "$SUB" in
-  body|sources|field|stale) ;;
+  body|sources|field|stale|drift) ;;
   *) usage ;;
 esac
 
@@ -272,10 +281,155 @@ cmd_stale() {
   done < "$WORK/nodes.txt"
 }
 
+# Reads one top-level frontmatter scalar out of an already-fetched node file.
+frontmatter_field() { # frontmatter_field <file> <key>
+  awk -v k="$2" '
+    NR == 1 && $0 == "---" { in_fm = 1; next }
+    in_fm && $0 == "---" { exit }
+    in_fm && index($0, k ":") == 1 {
+      sub("^" k ":[[:space:]]*", "")
+      gsub(/^"|"$/, "")
+      print
+      exit
+    }
+  ' "$1"
+}
+
+# Counts how many of a node's paths appear in a set of changed paths. Both inputs
+# are LC_ALL=C sorted, so this is an intersection rather than a scan per path --
+# which matters when a hub node covers 15k files and the diff touches 7k.
+count_intersect() { # count_intersect <sorted-node-paths> <sorted-changed-paths>
+  comm -12 "$1" "$2" | grep -c . || true
+}
+
+cmd_drift() {
+  [ $# -eq 0 ] || usage
+  command -v comm >/dev/null || exit 1
+
+  api_get_to "synapse/$REPO_NAME/_index.json" "$WORK/_index.json" || exit 1
+  jq -e . "$WORK/_index.json" >/dev/null 2>&1 || exit 1
+  jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
+    "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
+
+  # How far behind the upstream ref already is. Read-only and deliberately does not
+  # fetch: this is the state as of the last fetch, and pulling is the user's call --
+  # a tool that moves HEAD under a developer mid-work is a tool nobody trusts twice.
+  UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  if [ -n "$UPSTREAM" ]; then
+    BEHIND="$(git -C "$REPO_ROOT" rev-list --count "HEAD..$UPSTREAM" 2>/dev/null || echo 0)"
+    [ "$BEHIND" -gt 0 ] && printf '(repo)\t%s commits behind %s, as of the last fetch\n' "$BEHIND" "$UPSTREAM"
+  fi
+
+  # One `git diff` per *distinct* baseline, not per node: nodes built in the same
+  # run share a commit, so a 48-node namespace usually needs exactly one diff.
+  : > "$WORK/baselines.txt"
+  : > "$WORK/node-baseline.tsv"
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    if ! api_get_to "synapse/$REPO_NAME/$node" "$WORK/node.md"; then
+      printf '%s\tnode file missing from the vault\n' "${node%.md}"
+      continue
+    fi
+    baseline="$(frontmatter_field "$WORK/node.md" commit)"
+    if [ -z "$baseline" ]; then
+      printf '%s\tno commit recorded, so nothing to diff against -- verify with `stale`\n' "${node%.md}"
+      continue
+    fi
+    if ! git -C "$REPO_ROOT" cat-file -e "$baseline^{commit}" 2>/dev/null; then
+      # Force-push, a rebase that dropped it, or a shallow clone. Saying so beats
+      # reporting a diff against something that is not this history.
+      printf '%s\tbaseline %s not in local history -- verify with `stale`\n' "${node%.md}" "$(printf '%s' "$baseline" | cut -c1-12)"
+      continue
+    fi
+    printf '%s\n' "$baseline" >> "$WORK/baselines.txt"
+    extract_source_paths "$WORK/node.md" | LC_ALL=C sort > "$WORK/paths-$node.txt"
+    printf '%s\t%s\n' "$node" "$baseline" >> "$WORK/node-baseline.tsv"
+  done < "$WORK/nodes.txt"
+
+  [ -s "$WORK/node-baseline.tsv" ] || return 0
+
+  while IFS= read -r base; do
+    d="$WORK/diff-$base"
+    [ -f "$d.raw" ] && continue
+    git -C "$REPO_ROOT" diff --name-status -M "$base..HEAD" > "$d.raw" 2>/dev/null || : > "$d.raw"
+    # A rename line is `R100<TAB>old<TAB>new`; the old path is what a node still
+    # lists, so that is the one to intersect against.
+    awk -F'\t' '$1 ~ /^M/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.mod"
+    awk -F'\t' '$1 ~ /^D/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.del"
+    awk -F'\t' '$1 ~ /^R/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.ren"
+    awk -F'\t' '$1 ~ /^A/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.add"
+    COMMITS="$(git -C "$REPO_ROOT" rev-list --count "$base..HEAD" 2>/dev/null || echo 0)"
+    [ "$COMMITS" -gt 0 ] && printf '(repo)\t%s commits since baseline %s\n' \
+      "$COMMITS" "$(printf '%s' "$base" | cut -c1-12)"
+  done < <(LC_ALL=C sort -u "$WORK/baselines.txt")
+
+  while IFS=$'\t' read -r node base; do
+    [ -n "$node" ] || continue
+    d="$WORK/diff-$base"
+    p="$WORK/paths-$node.txt"
+    n_mod="$(count_intersect "$p" "$d.mod")"
+    n_del="$(count_intersect "$p" "$d.del")"
+    n_ren="$(count_intersect "$p" "$d.ren")"
+    [ "$n_mod" -gt 0 ] && printf '%s\tcontent changed in %s of its files\n' "${node%.md}" "$n_mod"
+    # Renames are the one class fixable without re-authoring: the concept is
+    # unchanged, only the paths moved, so the node can be rewritten from its own
+    # existing prose with an updated path list.
+    [ "$n_ren" -gt 0 ] && printf '%s\t%s of its files were renamed -- reseat sources, prose may still hold\n' "${node%.md}" "$n_ren"
+    [ "$n_del" -gt 0 ] && printf '%s\t%s of its files are gone\n' "${node%.md}" "$n_del"
+  done < "$WORK/node-baseline.tsv"
+
+  # Coverage drift: paths added since a baseline that no node claims. `stale` cannot
+  # report these at all -- a file absent from every `sources` list is invisible to a
+  # hash comparison. Split by whether the clustering patterns would already claim
+  # them on a re-run, because only the remainder needs a human-scale decision.
+  cat "$WORK"/diff-*.add 2>/dev/null | LC_ALL=C sort -u > "$WORK/added.txt"
+  if [ -s "$WORK/added.txt" ]; then
+    jq -r 'keys[]' "$WORK/_index.json" | LC_ALL=C sort > "$WORK/claimed.txt"
+    comm -23 "$WORK/added.txt" "$WORK/claimed.txt" > "$WORK/unclaimed.txt"
+    if [ -s "$WORK/unclaimed.txt" ]; then
+      MANIFEST=""
+      if api_get_to "synapse/$REPO_NAME/_manifest.tsv" "$WORK/manifest.tsv"; then
+        MANIFEST="$WORK/manifest.tsv"
+      elif [ -f "${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}/manifest.tsv" ]; then
+        MANIFEST="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}/manifest.tsv"
+      fi
+      if [ -n "$MANIFEST" ]; then
+        : > "$WORK/needs-decision.txt"
+        AUTO=0
+        while IFS= read -r path; do
+          matched=0
+          while IFS=$'\t' read -r title inc exc; do
+            [ -n "$title" ] || continue
+            printf '%s\n' "$path" | grep -qE "$inc" || continue
+            printf '%s\n' "$path" | grep -qE "${exc:-^\$}" && continue
+            matched=1
+            break
+          done < "$MANIFEST"
+          if [ "$matched" -eq 1 ]; then
+            AUTO=$((AUTO + 1))
+          else
+            printf '%s\n' "$path" >> "$WORK/needs-decision.txt"
+          fi
+        done < "$WORK/unclaimed.txt"
+        [ "$AUTO" -gt 0 ] && printf '(repo)\t%s new paths already match a manifest pattern -- re-run synapse-build-lists.sh to claim them\n' "$AUTO"
+        if [ -s "$WORK/needs-decision.txt" ]; then
+          printf '(repo)\t%s new paths match no manifest pattern: %s\n' \
+            "$(grep -c . "$WORK/needs-decision.txt")" \
+            "$(head -5 "$WORK/needs-decision.txt" | tr '\n' ' ')"
+        fi
+      else
+        printf '(repo)\t%s new paths claimed by no node, and no manifest to classify them against\n' \
+          "$(grep -c . "$WORK/unclaimed.txt")"
+      fi
+    fi
+  fi
+}
+
 # $SUB was validated above, so this needs no catch-all.
 case "$SUB" in
   body)    cmd_body "$@" ;;
   sources) cmd_sources "$@" ;;
   field)   cmd_field "$@" ;;
   stale)   cmd_stale "$@" ;;
+  drift)   cmd_drift "$@" ;;
 esac

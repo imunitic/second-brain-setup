@@ -148,6 +148,12 @@ needs one.
 
 ## Guardrails
 
+- `stale` is the right check for *this* procedure, but know what it cannot tell you: a file in no
+  node's `sources` is invisible to it, and a renamed file reads as "gone". `synapse-query.sh drift`
+  answers both, by diffing each node's recorded `commit` against HEAD. It is not on this hot path on
+  purpose — reading one node's body should not pay for a repo-wide coverage audit — so reach for it
+  when orienting after a `git pull` or a branch switch, and leave the systematic case to a deliberate
+  refresh rather than a read.
 - Never skip `synapse-query.sh stale` just because `stale: false` looked plausible — Tier 1 only catches
   edits made through this Claude Code session; a `git pull`, branch switch, or externally-made
   edit is invisible to it and only the script catches those.

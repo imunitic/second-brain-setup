@@ -148,6 +148,9 @@ Outside any git repo there is no pointer and nothing to exclude, so the catalogu
 
 ## Two-tier staleness
 
+Both tiers answer "has content under a node changed". Neither can see a file that belongs to *no*
+node, which is what `synapse-query.sh drift` is for — see "Drift" below.
+
 **Tier 1 — `PostToolUse` → `synapse-staleness.sh`.** Fires on every `Write`/`Edit`/`MultiEdit`.
 Resolves the repo root **from the edited file's own directory**, not the session's cwd, so a session
 spanning several repos flags the right namespace in each. Looks the edited path up in that repo's
@@ -188,6 +191,39 @@ unlike the cheap detection step, so it's never absorbed silently into a read. Th
 unconditionally sweeps the whole `_unassigned` bucket too, not just entries related to whatever
 triggered the regeneration — classifying each file against the existing node list and attaching or
 leaving it unassigned, announcing either outcome.
+
+## Drift: what the two tiers cannot see
+
+Both staleness tiers verify what a node already claims. That leaves a blind spot with a hard edge:
+**a file in no node's `sources` cannot be reported by a hash comparison**, because there is nothing to
+compare. So a `git pull` that adds a directory, a branch switch, or a rebase can leave the graph
+silently incomplete while `stale` prints nothing at all. Renames have a softer version of the same
+problem — `stale` can only call a renamed file "gone", when in fact the concept is unchanged and only
+the path moved.
+
+`synapse-query.sh drift` closes both. Each node records the `commit` it was built from, so drift asks
+`git diff --name-status -M <commit>..HEAD` and classifies the result: content changed, renamed
+(*reseat sources, prose may still hold* — the one class fixable without re-authoring), gone, or added.
+Added paths are split by whether the clustering patterns in `_manifest.tsv` would already claim them
+on the next `synapse-build-lists.sh` run, because only the remainder needs a human-scale decision. On
+a large repo that second bucket is usually empty: ordinary development adds files inside directories
+existing patterns already cover.
+
+Three deliberate properties:
+
+- **The baseline is per node, not per namespace.** Nodes are regenerated at different times, so each
+  diffs from its own build point. A namespace built in one run shares a commit, so the cost is one
+  `git diff` per *distinct* baseline — one diff for a 48-node namespace, not 48.
+- **It never pulls.** It reports how far behind the upstream ref already is (`rev-list --count`, as of
+  the last fetch) and leaves fetching to the human. A read-only analyser that moves `HEAD` under a
+  developer mid-work is one nobody trusts twice.
+- **An unusable baseline says so.** No `commit` field, or a commit absent from local history after a
+  force-push, dropped rebase or shallow clone, reports itself and points at `stale`. Diffing against a
+  commit that is not in this history would either fail or, worse, appear to work.
+
+Because `git hash-object` fingerprints the worktree rather than the commit, a node written from a
+dirty tree has an approximate baseline — the writer warns at the time, narrowly, on that node's own
+sources.
 
 ## Optional tree-sitter acceleration
 
