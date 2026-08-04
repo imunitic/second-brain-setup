@@ -154,6 +154,12 @@ brew install bats-core   # if not already installed
 bats tests/
 ```
 
+The same suite runs in CI on every push and pull request, on both Linux and macOS
+(`.github/workflows/tests.yml`). Both platforms deliberately: the two shells disagree in ways that pass
+silently on one of them — BSD versus GNU `sed -i`, and macOS `mktemp` ignoring `TMPDIR` unless given an
+explicit template — so a single-platform run would keep finding out about the other one from a bug
+report.
+
 Covers `setup.sh` (idempotent install and merge into a scratch `$HOME`),
 `synapse-session-start.sh` (index injection, the Graph pointer check, and the other-namespaces
 catalogue — pure git and filesystem, no network), `synapse-staleness.sh` (Tier 1 flagging plus the

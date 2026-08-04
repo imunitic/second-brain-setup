@@ -375,7 +375,7 @@ make_cited_repo() {
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
   printf '{"lib/calc.ml":["Cited.md"],"_unassigned":[]}' > "$TEST_HOME/index-body.json"
   write_cited_node "$(repo_name)" "Cited.md" \
-    "$(sed -n '1,2p' "$REPO/lib/calc.ml" | shasum -a 256 | cut -d' ' -f1)"
+    "$(sed -n '1,2p' "$REPO/lib/calc.ml" | sha256_stdin)"
 }
 
 @test "correction: silent when the cited evidence still matches" {
@@ -401,7 +401,7 @@ make_cited_repo() {
 
 @test "correction: a changed grounding range produces a nudge naming the node" {
   make_cited_repo
-  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+  sed_i 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
 
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
@@ -412,7 +412,7 @@ make_cited_repo() {
 
 @test "correction: a changed crux range produces a nudge too" {
   make_cited_repo
-  sed -i '' 's/^let line05 = 5$/let line05 = 999/' "$REPO/lib/calc.ml"
+  sed_i 's/^let line05 = 5$/let line05 = 999/' "$REPO/lib/calc.ml"
 
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
@@ -421,7 +421,7 @@ make_cited_repo() {
 
 @test "correction: the nudge tells the model to stay incidental" {
   make_cited_repo
-  sed -i '' 's/   Rounds half-up. \*)/   Something else entirely. *)/' "$REPO/lib/calc.ml"
+  sed_i 's/   Rounds half-up. \*)/   Something else entirely. *)/' "$REPO/lib/calc.ml"
 
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
@@ -435,8 +435,8 @@ make_cited_repo() {
   make_cited_repo
   # A node flagged stale earlier has had the LONGEST time to go wrong, so
   # skipping it would hide the very case worth catching.
-  sed -i '' 's/^stale: false$/stale: true/' "$VAULT/synapse/$(repo_name)/Cited.md"
-  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+  sed_i 's/^stale: false$/stale: true/' "$VAULT/synapse/$(repo_name)/Cited.md"
+  sed_i 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
 
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
@@ -448,7 +448,7 @@ make_cited_repo() {
 
 @test "correction: emits valid JSON, so the harness can parse it" {
   make_cited_repo
-  sed -i '' 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+  sed_i 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
 
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]

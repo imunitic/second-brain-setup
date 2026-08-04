@@ -29,7 +29,7 @@ write_mmd() { # write_mmd <name> <label>
 }
 
 stamp() { # stamp <name> -- record the CURRENT hash, as a successful render would
-  local h; h="$(shasum -a 256 < "$WORK/diagrams/$1.mmd" | cut -d' ' -f1)"
+  local h; h="$(sha256_stdin < "$WORK/diagrams/$1.mmd")"
   printf '%s\t%s\n' "$1" "$h" >> "$WORK/diagrams/.rendered"
 }
 

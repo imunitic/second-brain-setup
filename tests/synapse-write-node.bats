@@ -595,7 +595,7 @@ make_crux_repo() {
   grep -qxF 'let line05 = 5' "$(node_file Repointed)"
 
   # The file changes under the node: line 5 now says something else entirely.
-  sed -i '' 's/^let line05 = 5$/let line05 = 999 (* CHANGED *)/' "$REPO/lib/calc.ml"
+  sed_i 's/^let line05 = 5$/let line05 = 999 (* CHANGED *)/' "$REPO/lib/calc.ml"
   git -C "$REPO" add lib/calc.ml
   git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m change
 
@@ -626,7 +626,7 @@ make_grounded_repo() {
 
 # sha256 of a line range, computed independently of the script under test.
 slice_digest() { # slice_digest <path> <start> <end>
-  sed -n "$2,$3p" "$REPO/$1" | shasum -a 256 | cut -d' ' -f1
+  sed -n "$2,$3p" "$REPO/$1" | sha256_stdin
 }
 
 @test "grounded_in: records path, lines and a digest of the slice" {

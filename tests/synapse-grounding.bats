@@ -82,7 +82,7 @@ build_grounded_node() {
 @test "grounding: an edit to the grounded text itself is reported as changed" {
   build_grounded_node
   # The claim the summary rests on is now different prose.
-  sed -i '' 's/Rounds half-up at two decimals/Truncates toward zero/' "$REPO/lib/calc.ml"
+  sed_i 's/Rounds half-up at two decimals/Truncates toward zero/' "$REPO/lib/calc.ml"
 
   run in_repo "$QUERY" grounding
   [ "$status" -eq 0 ]

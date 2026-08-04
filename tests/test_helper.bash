@@ -40,6 +40,23 @@ OBSIDIAN_VAULT_DIR="$VAULT"
 EOF
 }
 
+# In-place sed that works on both BSD and GNU. `sed -i ''` is BSD-only (GNU reads
+# the empty string as a filename) and `sed -i` with no arg is GNU-only, so the
+# suite avoids -i altogether: edit to a temp file, then move it back.
+sed_i() { # sed_i <expression> <file>
+  local expr="$1" file="$2"
+  sed -e "$expr" "$file" > "$file.sed_i" && mv "$file.sed_i" "$file"
+}
+
+# sha256 of stdin, portable across macOS (shasum) and Linux (sha256sum). The
+# tests compute expected digests independently of the scripts under test, so they
+# need their own copy of this rather than sourcing one -- a shared implementation
+# would let a wrong formula agree with itself.
+sha256_stdin() {
+  if command -v shasum >/dev/null; then shasum -a 256 | cut -d' ' -f1
+  else sha256sum | cut -d' ' -f1; fi
+}
+
 common_teardown() {
   [ -n "${TEST_HOME:-}" ] && [ -d "$TEST_HOME" ] && rm -rf "$TEST_HOME"
 }

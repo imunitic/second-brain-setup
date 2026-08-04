@@ -1,0 +1,62 @@
+name: tests
+
+# Every push and pull request. The suite is fast (a couple of minutes) and needs
+# no secrets: the Obsidian Local REST API is stubbed by tests/fixtures/fake-bin/curl,
+# tree-sitter and its grammar cloning by the fake tree-sitter and git in the same
+# folder, so nothing here touches a network, a real vault, or a real ~/.claude.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bats:
+    # Both platforms deliberately. The scripts and tests are developed on macOS,
+    # while anyone cloning this is as likely to be on Linux -- and the two shells
+    # disagree in ways that pass silently on one of them (BSD vs GNU sed -i, and
+    # macOS mktemp ignoring TMPDIR without an explicit template). A matrix is the
+    # only thing that keeps both honest.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # npm rather than apt/brew: it gives the same bats version on both runners,
+      # and the distro packages lag far enough behind to differ from each other.
+      - name: Install bats
+        run: npm install -g bats
+
+      - name: Show versions
+        run: |
+          bats --version
+          bash --version | head -1
+          jq --version
+          sed --version 2>/dev/null | head -1 || true
+          sed --version >/dev/null 2>&1 || echo "sed: BSD (no --version)"
+          python3 --version
+
+      # git config is required: several tests commit to a scratch repo, and a
+      # runner has no global identity, so the commit would fail rather than the
+      # assertion being exercised.
+      - name: Configure git identity for scratch repos
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+
+      - name: Run the suite
+        run: bats tests/
+
+      # Both generated artefacts are already verified inside the suite, by their
+      # own --check mode. Repeated here only so a failure names itself in the log
+      # rather than arriving as one line inside a 238-test run.
+      - name: Generated docs are in sync
+        if: always()
+        run: ./docs/generate-scripts-reference.sh --check
+
+      - name: Rendered diagrams are in sync
+        if: always()
+        run: ./docs/generate-diagrams.sh --check
