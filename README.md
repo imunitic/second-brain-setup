@@ -15,12 +15,6 @@ This repository packages the **Tools**, plus the templates and config they need.
 your notes: the Vault's content is a separate sync concern (git, Obsidian Sync, iCloud, manual copy —
 your call).
 
-> **Upgrading from before the rename?** Just re-run `./setup.sh`. It moves
-> `second-brain.conf`/`second-brain-projects.conf` to their `synapse-` names keeping your contents,
-> rewrites the `settings.json` hook paths (and collapses any duplicate that creates, since a duplicated
-> entry fires twice), and names the leftover files that are safe to delete. Every script also reads the
-> old config name as a fallback, so scripts updated ahead of `setup.sh` keep working.
-
 ## Synapse Vault — the notes
 
 - `claude/CLAUDE.md` — the global memory-system instructions: when to write a note, where it goes,
@@ -149,10 +143,9 @@ prints the manual steps below.
    ```
 6. Restart Claude Code.
 
-If you are upgrading an install that predates the `sb-*` rename (formerly
-`obsidian-note`/`obsidian-design-note`/`obsidian-task-note`/`obsidian-task`) or the removal of the
-org-roam backend, re-running `setup.sh` flags any stale files left under `~/.claude/` so you can remove
-them by hand.
+`setup.sh` is safe to re-run at any time. It migrates config filenames it recognises, rewrites hook
+paths in `settings.json` rather than adding a second copy, and reports any file under `~/.claude/` that
+it no longer installs, so nothing is left running that the docs stop describing.
 
 ## Testing
 

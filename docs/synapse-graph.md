@@ -112,7 +112,7 @@ primitive, let the per-language or per-repo specifics be discovered and cached.
 Two conventions in those names, and only one of them does anything. The **extension** is load-bearing:
 Obsidian indexes `.md` as notes, so anything ending `.md` shows up in search, Quick Switcher and the
 graph, while a `.txt`/`.tsv`/`.json` sibling is invisible to all three and still fully readable by the
-tooling (verified by writing the same token both ways and searching for it). The **`_` prefix does
+tooling. The **`_` prefix does
 nothing mechanically** — Obsidian has no notion of it; it is purely a signal to a human who sees the
 file in the explorer that nothing here is hand-edited. Dotfiles would hide these from the file
 explorer too, but that hides them from *you* as well, and some sync tools skip them — a poor trade for
@@ -148,99 +148,90 @@ Worth stating plainly, because conflating the two produces a real bug — trimmi
 ### The crux is sliced, not typed
 
 The body never contains crux code. It carries a directive — `<!-- crux: path/to/file.ext 412-419 -->`,
-or `<!-- crux: none -->` — and `synapse-write-node.sh` cuts those lines out of the file, fences them
-with a language guessed from the extension, appends a `path:start-end` provenance line, and records
-`crux_path`/`crux_lines` in frontmatter. The write is refused if the path is not one the node claims,
-if the range runs off the end of the file, or if the span reaches 20 lines.
+or `<!-- crux: none -->` — and `synapse-write-node.sh` cuts those lines out of the file, fences them with
+a language guessed from the extension, appends a `path:start-end` provenance line, and records
+`crux_path`/`crux_lines` in frontmatter. The write is refused if the path is not one the node claims, if
+the range runs off the end of the file, or if the span reaches 20 lines.
 
-The reason is the difference between a rule and a mechanism. A crux that a model *types* can be a
-paraphrase that merely looks like a quote — `trait Matcher { /* no engine assumptions */ }` reads
-perfectly, cites nothing, and is indistinguishable from a real quote to anyone who does not go and
-check. An instruction to quote rather than compose depends on compliance and cannot be verified. A
-crux the *script* cuts cannot be composed at all. This is the same mechanics-are-scripts split that
-`manifest.tsv` draws for clustering, applied to the one field where fabrication is both easiest and
-least visible: the model points, the script quotes. (Borrowed from Graft, which has the model return
-line numbers per definition and slices the text at write time.)
+This is the difference between a rule and a mechanism. A crux a model *types* can be a paraphrase that
+merely looks like a quote — something shaped like code, citing nothing, indistinguishable from a real
+quote to anyone who does not go and check. An instruction to quote rather than compose depends on
+compliance and cannot be verified; a crux the *script* cuts cannot be composed at all. It is the
+mechanics-are-scripts split that `manifest.tsv` draws for clustering, applied to the field where
+fabrication is easiest and least visible: the model points, the script quotes.
 
-Storing the sliced text rather than the pointer is deliberate, and the two choices are not in tension.
-Line numbers decay as a file changes, so a node that stored only `412-419` would silently come to cite
-something else. Resolving the pointer **once, at write time**, and keeping the text gives both
-properties at once: impossible to fabricate when authored, immune to line drift once stored. The
-pointer is kept alongside so a rebuild can re-slice deliberately rather than carrying an old quote
-forward — see `/synapse-rebuild`, which reconstructs the directive from `crux_path`/`crux_lines`.
+The pointer is authored and the text is stored, which buys both properties at once. Line numbers decay
+as a file changes, so a node holding only `412-419` would come to cite something else; resolving the
+pointer at write time and keeping the result is unfabricable when authored and immune to line drift
+afterwards. `crux_path`/`crux_lines` stay in frontmatter so a rebuild can re-slice deliberately instead
+of carrying an old quote forward — `/synapse-rebuild` reconstructs the directive from them.
 
-`none` is a first-class answer. A trivial data holder, a one-line delegation, or logic spread evenly
-across a subsystem genuinely has no focal span, and a node covering a whole module often has none. A
-required field with no honest answer is precisely how an invented one appears, so the format offers a
-way to say so.
+`none` is a first-class answer, for a trivial data holder, a one-line delegation, or logic spread evenly
+across a subsystem with no focal span. A required field with no honest answer is how an invented one
+appears, so the format provides a way to say there isn't one.
 
 ### Grounded summaries: evidence recorded as a checkable field
 
-The crux is unfabricable now, but the prose around it is not, and the prose is most of the node. A
-summary can state a mechanism that was false the day it was written — and because regeneration keeps
-every sentence a diff does not contradict, a claim that was never true survives every future patch
-untouched. There is nothing in a diff that can contradict it.
+The crux is mechanically checkable; the prose around it is not, and the prose is most of a node. A
+summary can assert a mechanism that is simply untrue, and regeneration preserves every sentence a diff
+does not contradict — so a claim that was never true is never contradicted by anything.
 
-So a summary points at its evidence. Any number of `<!-- grounded_in: path start-end -->` directives in
-the body name what the codebase asserts about itself, in preference order: a **test** (its name and
-assertions describe behaviour CI re-checks on every commit — the strongest evidence short of running
-the code), a **doc comment** (the author's own claim of intent), then plain reading. The writer records
-each as `path` + `lines` + sha256 **of the sliced text** in a `grounded_in` frontmatter list and strips
-the directives from the body: this is provenance, not display, and six groundings rendered as six code
-blocks would bury the prose a reader came for.
+A summary therefore points at its evidence. Any number of `<!-- grounded_in: path start-end -->`
+directives name what the codebase asserts about itself, in preference order: a **test** (its name and
+assertions describe behaviour CI re-checks on every commit, the strongest evidence short of running the
+code), a **doc comment** (the author's own claim of intent), then plain reading. A claim traced to either
+is one the codebase makes; even a *wrong* doc comment beats an invented explanation, because it is
+attributable and findable.
 
-Storing only the digest keeps the field small, avoids escaping multi-line code into YAML, and makes
-verification mechanical. Digesting the *slice* rather than the file is the point — a file changing
-elsewhere leaves the grounding intact, which is a far sharper signal than "N% of this node's lines
-moved". `synapse-query.sh grounding` re-slices every recorded range and compares:
+The writer records each as `path` + `lines` + sha256 **of the sliced text** in a `grounded_in`
+frontmatter list, and strips the directives from the body. This is provenance rather than display: six
+groundings rendered as six code blocks would bury the prose a reader came for. Storing only the digest
+keeps the field small, avoids escaping multi-line code into YAML, and makes verification mechanical.
+The digest covers the *slice*, not the file, so a change elsewhere in that file leaves the grounding
+intact — a far sharper signal than what fraction of a node's lines moved.
+
+`synapse-query.sh grounding` re-slices every recorded range and compares:
 
 - **silence** — the evidence still says what it said, so nothing has undercut the prose;
 - **`grounding moved: path 1-2 -> 3-4`** — byte-identical text at a new offset, because something was
-  inserted above it. Mechanically fixable by re-pointing, no reading required;
-- **`grounding changed: path 1-2`** — the evidence itself is different. The claim resting on it needs a
-  look.
+  inserted above it. Fixable by re-pointing, no reading required;
+- **`grounding changed: path 1-2`** — the evidence itself differs. The claim resting on it needs a look.
 
-That *moved*/*changed* split is what makes the check worth running. Without it, inserting one line near
-the top of a file would report every grounding below as broken, and a check that cries wolf is a check
-that gets ignored. A mismatch is a prompt to re-read one span, never proof the summary is wrong — the
+The *moved*/*changed* split is what makes the check worth running rather than ignoring: without it, one
+inserted line near the top of a file reports every grounding below as broken, and a check that cries
+wolf gets tuned out. A mismatch is a prompt to re-read one span, never proof the summary is wrong — the
 judgement stays with the model, the mechanics stay in the script.
 
-Two limits worth stating. Grounding is **partial by design**: architectural narrative and hard-won
-debugging findings have no test asserting them, so they cannot be cited and should not be watered down
-to become citable. And it is **node-level, not sentence-level** — a failed grounding says "something
-this node claims may have moved", not which sentence. Tying each grounding to its own claim is a
-possible refinement, not a current promise.
+Grounding is **partial**. Architectural narrative and findings that came out of debugging have no test
+asserting them; they cannot be cited, and should not be watered down to become citable. It is also
+**node-level**: a failure says something this node claims may have moved, not which sentence.
 
 ### Opportunistic correction: the graph self-heals where work happens
 
-Grounding makes a summary's evidence checkable, but something still has to go and check. Running
-`grounding` over a whole namespace is a deliberate act nobody performs weekly, so the interesting
-question is where a check can be had for free.
+Checking a namespace with `grounding` is a deliberate act. The `PostToolUse` hook is where the same
+check costs nothing: it already fires on every `Write`/`Edit`/`MultiEdit`, already resolves which nodes
+claim the edited file, and is the one point where the code has certainly just been read.
 
-There is exactly one such moment: the `PostToolUse` hook. It already fires on every
-`Write`/`Edit`/`MultiEdit`, already resolves which nodes claim the edited file, and it is the one point
-where the model has *certainly just read that code*. So beyond flagging `stale: true`, the hook
-re-verifies any evidence those nodes cite **in the file just edited** — the range its `crux` was sliced
-from, and any `grounded_in` entry pointing there. If the cited range still matches, nothing is said. If
-it stopped matching, the hook returns a nudge naming the node and the evidence, and asks for the one
-sentence the edit contradicts to be fixed.
+So alongside flagging `stale: true`, the hook re-verifies the evidence those nodes cite **in the file
+just edited** — the range the `crux` was sliced from, and any `grounded_in` entry pointing there. If the
+cited range still matches, it says nothing. If it stopped matching, it returns a nudge naming the node
+and the evidence, and asks for the one sentence the edit contradicts to be fixed.
 
-The narrowness is the design, not a limitation. Nudging on any edit to any of a node's files would fire
-on nearly every edit in a repo of any size and be tuned out within a day — and the rare meaningful one
-would go with it. Nudging only when explicitly cited evidence stopped matching fires rarely and means
-something every time. Two consequences follow: the check costs nothing extra, since no re-reading is
-requested; and correctness accrues along the paths actually being worked in, while dormant subsystems
-stay exactly as vague as they were. That is the right trade — nobody is reading those nodes either.
+The narrowness is what makes it work. A nudge on any edit to any of a node's files would fire on nearly
+every edit in a repo of real size and be tuned out within a day, taking the rare meaningful one with it.
+A nudge only when explicitly cited evidence stops matching fires rarely and means something each time.
+Two consequences: the check asks for no re-reading, so it is free; and correctness accrues along the
+paths being worked in, while dormant subsystems stay as vague as they were — which costs nothing,
+because nothing is reading them either.
 
-The nudge carries its own guardrail, because the failure mode is obvious: correct only what this edit
-contradicts, never re-read the node's other sources, never verify its remaining claims, never start a
-sweep. A sweep is `/synapse-rebuild`'s job, and turning a free habit into an expensive one is how it
-would stop being worth having. A node already flagged `stale` is still checked — it has had the longest
-to go wrong, so skipping it would hide the very case worth catching.
+The nudge carries its own guardrail: correct only what this edit contradicts, never re-read the node's
+other sources, never verify its remaining claims, never start a sweep. Sweeping is `/synapse-rebuild`'s
+job, and a free habit that turns into an expensive one stops being worth having. A node already flagged
+`stale` is still checked — it has had the longest to go wrong, so skipping it would hide the case most
+worth catching.
 
-This also changes what the two-tier model is for. Tier 1 was pure bookkeeping: "something under this
-node changed". It now additionally answers, for the narrow slice it can, "and here is a claim that may
-no longer hold" — which is the only part of a node the tiers previously had no opinion about at all.
+Tier 1 therefore answers two questions rather than one: whether something under a node changed, and —
+for the narrow slice it can see — whether a specific claim may no longer hold.
 
 ## What a session is told at startup
 
@@ -277,14 +268,15 @@ The hook also refuses to write when the namespace's `remote:` doesn't match the 
 It sets that field by **read-modify-write** (`GET`, rewrite the one `stale:` line, `PUT`), never by
 `PATCH` with `Target-Type: frontmatter`. That call is not field-local despite reading that way: it
 re-serialises the whole YAML block, stripping quotes, folding long `title:` lines, and YAML-coercing
-values by type inference — verified, an all-digit `hash` came back as `1.1111111111111112e+39`. A
-corrupted hash makes `sources_digest` disagree with its own `sources` permanently, so that would be a
-false positive no rebuild can clear.
+values by type inference — an all-digit `hash` comes back as `1.1111111111111112e+39`. A corrupted
+hash makes `sources_digest` disagree with its own `sources` permanently, which is a false positive no
+rebuild can clear.
 
 **Tier 2 — read-time, the `synapse-node` skill.** Not a hook — a procedure Claude follows itself,
 proactively, whenever a node's body is about to actually be used (not a title-only skim). It runs
 `claude/bin/synapse-query.sh stale`, which verifies the **whole project in one pass** — one
-`git hash-object` fork plus one GET per node, ~1.5s for 51 nodes — and prints one line per stale node
+`git hash-object` fork plus one GET per node, a second or two for a few dozen nodes — and prints one
+line per stale node
 with a reason (content changed, source files gone by name, no digest, node file missing), or nothing
 at all when everything is current. Its exit 1 means "could not verify", not "clean".
 
@@ -400,10 +392,8 @@ It's optional at every layer, never a hard dependency:
 - **Exit codes are the whole contract**: `0` → tags printed, use them; `1` → not usable right now
   (missing `tree-sitter`, no C compiler, a confirmed-unsupported language) — fall back to reading
   the file directly, silently; `2` → never-seen extension, run discovery once, then retry.
-- Grammars build as native libraries (`tree-sitter build`, no `--wasm` — WASM was tried and
-  rejected: the CLI needs a non-default Rust build to *consume* WASM grammars, which is a worse
-  dependency than the C compiler needed to build native ones).
+- Grammars build as native libraries (`tree-sitter build`, not `--wasm`: consuming WASM grammars needs
+  a non-default Rust build of the CLI, a worse dependency than the C compiler native grammars need).
 
-Every one of these fallback paths was verified directly, not assumed — including catching and
-fixing a real bug where a qualified-path reference (`Eon_ecs.Foo.bar`) got double-counted as a bare
-same-package reference, producing edges that didn't actually exist in the code.
+One subtlety in reading the output: a qualified-path reference (`Eon_ecs.Foo.bar`) must not also be
+counted as a bare same-package reference to `bar`, or the tags imply edges the code does not contain.
