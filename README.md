@@ -155,10 +155,17 @@ and the verifier fails a test instead of silently agreeing with itself. Every
 test runs against a throwaway `$HOME`/git repo/vault created in
 `tests/test_helper.bash` — nothing here touches your real `~/.claude` or vault.
 
-Not covered by these tests: `claude/commands/synapse-init.md` and
+Also covered: `docs/scripts.md` is generated from each script's header
+block by `docs/generate-scripts-reference.sh`, and the suite runs that
+generator's `--check` mode — so a header edit that was never regenerated
+fails a test instead of leaving a reference that describes a script as it
+used to be. Every script prints the same block for `--help`.
+
+Not covered by these tests: `claude/commands/synapse-init.md`,
+`claude/commands/synapse-rebuild.md` and
 `claude/skills/synapse-node/SKILL.md` are natural-language procedures
 Claude follows, not code — there's nothing for a test framework to
-execute there. That split is deliberate rather than a gap: those two
+execute there. That split is deliberate rather than a gap: those
 documents hold the judgment (what the nodes are, what their prose says),
 and everything they delegate to a script is what the suite covers. If a
 step in either can be tested, it belongs in a script instead.

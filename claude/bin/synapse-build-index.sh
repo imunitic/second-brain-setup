@@ -9,16 +9,25 @@
 # Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title, unassigned.txt
 # Writes synapse/{repo}/_index.json in the vault
 #
-# This file is what the PostToolUse staleness hook reads, so it must cover every
-# enumerated file: an edit to an unlisted path silently flags nothing stale. It is
-# also far too large to pass through a context window (~29 MB for a 125k-file
-# repo), which is why it is assembled by jq here rather than authored.
+# Read by the PostToolUse staleness hook, so it must cover every enumerated file:
+# an edit to an unlisted path flags nothing stale. Tens of megabytes on a large
+# repo, hence jq rather than authoring it.
 #
 # Note for agent callers: needs the sandbox disabled (localhost REST API).
 set -euo pipefail
 
 readonly CONF="$HOME/.claude/second-brain.conf"
 readonly CERT="$HOME/.claude/obsidian-local-rest-api-ca.pem"
+
+# Extracted from the header block, so help and docs/scripts.md cannot disagree.
+usage() { # usage [exit-code]
+    awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+    exit "${1:-2}"
+}
+
+case "${1:-}" in
+    -h|--help) usage 0 ;;
+esac
 
 command -v jq >/dev/null || { echo "synapse-build-index: jq required" >&2; exit 1; }
 command -v git >/dev/null || { echo "synapse-build-index: git required" >&2; exit 1; }

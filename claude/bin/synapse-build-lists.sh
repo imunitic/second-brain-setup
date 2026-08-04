@@ -12,19 +12,25 @@
 #         $SYNAPSE_WORK_DIR/lists/NN.title the node title for that list
 #         $SYNAPSE_WORK_DIR/unassigned.txt files no node claimed
 #
-# Coverage is the point: it prints enumerated/covered/unassigned counts on every
-# run, so "did I drop 4,000 files with a bad regex" is a number rather than a
-# hope. A pattern slip (`config$` matching only a file literally named config)
-# shows up here instead of silently landing in _unassigned.
+# Prints enumerated/covered/unassigned counts, so a bad pattern shows up as a
+# number rather than a silent gap. $SYNAPSE_EXTRA_EXCLUDE_RE appends repo-specific
+# noise to the built-in exclusions.
 #
 # Exit codes: 0 ok, 1 could not run, 2 usage error
 set -euo pipefail
+
+# Extracted from the header block, so help and docs/scripts.md cannot disagree.
+usage() { # usage [exit-code]
+    awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+    exit "${1:-2}"
+}
 
 reenumerate=false
 case "${1:-}" in
     "") ;;
     --reenumerate) reenumerate=true ;;
-    *) sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+    -h|--help) usage 0 ;;
+    *) usage ;;
 esac
 
 command -v git >/dev/null || { echo "synapse-build-lists: git required" >&2; exit 1; }
@@ -32,11 +38,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-build-lists: not inside a git repo" >&2; exit 1; }
 REPO_NAME="$(basename "$REPO_ROOT")"
 
-# The default must not be $PWD. These scripts resolve the repo from $PWD, so they
-# are always run from inside it -- a $PWD default would drop all.txt (megabytes on
-# a large repo), lists/, the manifest and the coverage files straight into the
-# user's checkout. Keyed per repo so a re-run finds the previous manifest, and kept
-# out of the vault so Obsidian never indexes a 125k-line file list.
+# Not $PWD: the repo is resolved from $PWD, so a $PWD default would write the
+# enumeration and lists into the user's checkout. Per repo, so a re-run finds the
+# previous manifest.
 readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}"
 mkdir -p "$WORK_DIR"
 readonly ALL="$WORK_DIR/all.txt"
@@ -45,15 +49,9 @@ readonly LISTS="$WORK_DIR/lists"
 
 [[ -f "$MANIFEST" ]] || { echo "synapse-build-lists: no manifest.tsv in $WORK_DIR" >&2; exit 1; }
 
-# Files with no prose value for clustering. Dropped at enumeration rather than
-# parked in _unassigned, so a later re-run sweep never tries to classify a
-# favicon -- _unassigned should mean "text I could not place".
-#
-# Kept deliberately ecosystem-neutral: an exclusion list that only knows JVM and
-# web artifacts silently indexes a few thousand .pyc / .rlib / .safetensors files
-# as if they were source. Grouped by what they are, so the next language is easy
-# to slot in. Source formats are never listed here -- .svg, .ipynb and .csv are
-# text a reader can learn from, however awkward.
+# Dropped at enumeration, so _unassigned means "text I could not place". Grouped
+# by what a file is rather than by ecosystem, so adding a language is a one-line
+# change. Source formats never belong here.
 readonly BINARY_RE='\.('\
 'png|gif|jpg|jpeg|bmp|tif|tiff|webp|avif|ico|svgz|psd|ai|sketch|fig|'\
 'mp3|m4a|wav|flac|ogg|mp4|m4v|mov|avi|mkv|webm|'\
@@ -78,25 +76,15 @@ readonly NOISE_RE='(^|/)('\
 
 if [[ ! -s "$ALL" || "$reenumerate" == true ]]; then
     echo "--- enumerating tracked files"
-    # `git ls-files` gives .gitignore exclusion for free. The `-f` test drops
-    # submodule gitlinks: ls-files reports one entry per submodule, but it is a
-    # directory on disk and `git hash-object` fails on it, taking the whole batch
-    # down. Testing for a regular file is deliberate -- parsing .gitmodules would
-    # let a stray non-file through, and synthesising a hash from `ls-files -s`
-    # would leave the writer and `synapse-query.sh stale` using different
-    # commands for that entry, a permanent false positive.
-    # `if` rather than `[[ -f ]] && printf`: as the loop body's last statement a
-    # false test makes the whole while loop exit 1, and under `set -e` that kills
-    # the script -- which happens exactly when the last enumerated entry is the
-    # one being skipped, e.g. a `vendor/` submodule sorting last.
-    # $SYNAPSE_EXTRA_EXCLUDE_RE adds repo-specific noise (generated clients, vendored
-    # trees) without editing this script. It appends to the built-in lists rather
-    # than replacing them, so a repo can never accidentally lose the defaults.
     git ls-files \
         | grep -vE "$BINARY_RE" \
         | grep -vE "$NOISE_RE" \
         | grep -vE "${SYNAPSE_EXTRA_EXCLUDE_RE:-^$}" \
         | while IFS= read -r p; do
+        # -f drops submodule gitlinks: one ls-files entry each, but a directory on
+        # disk, and `git hash-object` fails the whole batch on one. Written as an
+        # `if` because as the body's last statement a false `[[ -f ]] && printf`
+        # makes the loop exit 1, which under `set -e` kills the script.
         if [[ -f "$p" ]]; then
             printf '%s\n' "$p"
         fi

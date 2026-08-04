@@ -26,6 +26,16 @@
 # Note for agent callers: needs the sandbox disabled (localhost REST API).
 set -euo pipefail
 
+# Extracted from the header block, so help and docs/scripts.md cannot disagree.
+usage() { # usage [exit-code]
+    awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+    exit "${1:-2}"
+}
+
+case "${1:-}" in
+    -h|--help) usage 0 ;;
+esac
+
 command -v git >/dev/null || { echo "synapse-push-nodes: git required" >&2; exit 1; }
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-push-nodes: not inside a git repo" >&2; exit 1; }
@@ -41,20 +51,15 @@ readonly WRITER="$SCRIPT_DIR/synapse-write-node.sh"
 [[ -x "$WRITER" ]] || { echo "synapse-push-nodes: missing $WRITER" >&2; exit 1; }
 [[ -d "$LISTS" ]] || { echo "synapse-push-nodes: no lists/ in $WORK_DIR -- run synapse-build-lists.sh first" >&2; exit 1; }
 
-# macOS ships bash 3.2, which has no mapfile or associative arrays -- collect into
-# a plain string.
-#
-# The default target set is the union of staged lists and authored bodies, not
-# just the bodies: in a multi-dozen-node build the useful output is "these are
-# pushed, these are still unwritten", and enumerating only b-NN.md would make an
-# un-authored node vanish from the report instead of showing up as a SKIP.
+# bash 3.2 on macOS has no mapfile, hence the plain string. The default target set
+# is the union of staged lists and authored bodies, so an un-authored node reports
+# as a SKIP rather than vanishing.
 if [[ $# -gt 0 ]]; then
     targets="$*"
 else
-    # `find`, not `ls`: a glob with no matches makes ls exit non-zero, and under
-    # `set -e` + `pipefail` that aborts the whole script inside this command
-    # substitution -- silently, since ls's stderr is suppressed. find reports no
-    # matches as success.
+    # `find`, not `ls`: a no-match glob makes ls exit non-zero, which under
+    # `set -e` + `pipefail` kills the script inside this substitution -- silently,
+    # since ls's stderr is suppressed.
     targets="$( {
         find "$LISTS" -maxdepth 1 -name '[0-9][0-9].title' | sed -E 's#.*/([0-9]{2})\.title$#\1#'
         find "$WORK_DIR" -maxdepth 1 -name 'b-[0-9][0-9].md' | sed -E 's#.*/b-([0-9]{2})\.md$#\1#'

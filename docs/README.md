@@ -16,6 +16,11 @@ one matches what you're trying to understand.
 - **[design-task-workflow.md](design-task-workflow.md)** — the design-note → task-note pairing
   pipeline: `/sb-design-note`, `/sb-task-note`, the `sb-task` status-tracking skill, and the
   optional GitHub-issue mirror.
+- **[scripts.md](scripts.md)** — reference for every `claude/bin/*.sh`: purpose, usage, arguments and
+  exit codes. **Generated**, by `generate-scripts-reference.sh`, from the same header block each
+  script prints for `--help` — so it cannot describe a script that has moved on. Run the generator
+  after editing a header; `--check` is wired into the test suite. It carries no rationale on purpose:
+  that belongs in the docs above, and duplicating it in two places is how the copies start to differ.
 
 Diagrams live in [diagrams/](diagrams/), one per doc above, embedded as PNGs exported by hand from
 ExcalidrawZ:

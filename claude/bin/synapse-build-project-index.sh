@@ -9,25 +9,22 @@
 # Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (for titles and file counts)
 #        each node's `summary` frontmatter field, fetched from the vault
 #
-# The summary is read back off the node rather than supplied here, so there is
-# exactly one copy of it. A separate summaries file would let this index describe a
-# node as it used to be, with nothing able to detect the drift. Consequence: run
-# this only after the nodes exist, and it fails loudly on a node that is missing or
-# has no summary -- both of which mean the namespace is incomplete.
-#
-# It cannot use `synapse-query.sh field` for this: that refuses to run until
-# Index.md exists, and Index.md is what this script produces.
-#
-# The index is a generated map, and everything in it is either mechanical (the
-# remote, the counts, the sanitized wikilink filenames) or a one-line summary
-# supplied per node. It carries no repo-specific prose: a convention worth
-# explaining -- a layering rule, a module/package naming divergence -- is a
-# *concept*, so it belongs in a node, where it is searchable through `sources`,
-# tracked for staleness and linkable from other nodes. Prose with nothing computed
-# into it never needs to pass through this script.
+# Run after the nodes exist: summaries are read back off the nodes, and a node that
+# is missing or has no `summary` is a hard error. Emits no repo-specific prose of
+# its own -- see docs/synapse.md for why.
 #
 # Note for agent callers: needs the sandbox disabled (localhost REST API).
 set -euo pipefail
+
+# Extracted from the header block, so help and docs/scripts.md cannot disagree.
+usage() { # usage [exit-code]
+    awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+    exit "${1:-2}"
+}
+
+case "${1:-}" in
+    -h|--help) usage 0 ;;
+esac
 
 command -v git >/dev/null || { echo "synapse-build-project-index: git required" >&2; exit 1; }
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"

@@ -15,19 +15,9 @@
 #
 # <node> may be given with or without the trailing `.md`.
 #
-# `stale` and `drift` answer different questions and neither subsumes the other.
-# `stale` re-hashes what each node already claims, so it catches edited content but
-# is blind to files that were *added* -- a path in no node's `sources` cannot be
-# reported by definition. `drift` diffs each node's recorded `commit` against HEAD,
-# so it also sees additions, deletions and renames, and it costs one `git diff` per
-# distinct baseline rather than a hash of every tracked file. Neither pulls: `drift`
-# reports how far behind the upstream ref already is and leaves fetching to you.
-#
-# Why a script rather than something Claude does inline: a hub node's `sources`
-# frontmatter runs to ~38k tokens and `_index.json` to ~350k, so neither can
-# enter a context window. Everything a script reads internally is free -- only
-# its stdout costs tokens. Same architecture as synapse-staleness.sh: bash + jq
-# + curl, never a context read.
+# `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
+# HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
+# When to use which, and why any of this is a script: docs/synapse.md.
 #
 # Exit codes:
 #   0 - ran successfully (check stdout; empty output from `stale`/`drift` means clean)
@@ -36,9 +26,10 @@
 #   2 - usage error (unknown subcommand, bad flag, unsupported field)
 set -uo pipefail
 
-usage() {
-  sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//' >&2
-  exit 2
+# Extracted from the header block, so help and docs/scripts.md cannot disagree.
+usage() { # usage [exit-code]
+  awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+  exit "${1:-2}"
 }
 
 SUB="${1:-}"
@@ -51,6 +42,7 @@ shift
 # down would send the caller looking in the wrong place entirely.
 case "$SUB" in
   body|sources|field|stale|drift) ;;
+  -h|--help) usage 0 ;;
   *) usage ;;
 esac
 
@@ -295,9 +287,7 @@ frontmatter_field() { # frontmatter_field <file> <key>
   ' "$1"
 }
 
-# Counts how many of a node's paths appear in a set of changed paths. Both inputs
-# are LC_ALL=C sorted, so this is an intersection rather than a scan per path --
-# which matters when a hub node covers 15k files and the diff touches 7k.
+# Both inputs must be LC_ALL=C sorted: this is an intersection, not a scan per path.
 count_intersect() { # count_intersect <sorted-node-paths> <sorted-changed-paths>
   comm -12 "$1" "$2" | grep -c . || true
 }
@@ -311,17 +301,15 @@ cmd_drift() {
   jq -r 'to_entries | map(select(.key != "_unassigned")) | map(.value[]) | unique | .[]' \
     "$WORK/_index.json" > "$WORK/nodes.txt" 2>/dev/null || exit 1
 
-  # How far behind the upstream ref already is. Read-only and deliberately does not
-  # fetch: this is the state as of the last fetch, and pulling is the user's call --
-  # a tool that moves HEAD under a developer mid-work is a tool nobody trusts twice.
+  # Never fetches, so this is the state as of the last fetch.
   UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
   if [ -n "$UPSTREAM" ]; then
     BEHIND="$(git -C "$REPO_ROOT" rev-list --count "HEAD..$UPSTREAM" 2>/dev/null || echo 0)"
     [ "$BEHIND" -gt 0 ] && printf '(repo)\t%s commits behind %s, as of the last fetch\n' "$BEHIND" "$UPSTREAM"
   fi
 
-  # One `git diff` per *distinct* baseline, not per node: nodes built in the same
-  # run share a commit, so a 48-node namespace usually needs exactly one diff.
+  # Collect distinct baselines, so the diff below runs once per baseline, not once
+  # per node -- nodes built in the same run share a commit.
   : > "$WORK/baselines.txt"
   : > "$WORK/node-baseline.tsv"
   while IFS= read -r node; do
@@ -358,10 +346,8 @@ cmd_drift() {
     awk -F'\t' '$1 ~ /^D/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.del"
     awk -F'\t' '$1 ~ /^R/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.ren"
     awk -F'\t' '$1 ~ /^A/ { print $2 }' "$d.raw" | LC_ALL=C sort > "$d.add"
-    # `rev-list --count base..HEAD` counts only one direction, which lies on a
-    # divergent line: after switching to an older release branch it reports the few
-    # commits unique to that branch and stays silent about the hundreds the baseline
-    # has that HEAD does not. `--left-right --count base...HEAD` gives both.
+    # `--left-right`, not `--count base..HEAD`: the one-directional count reports
+    # only commits unique to HEAD, which is misleading once the two have diverged.
     SHORT="$(printf '%s' "$base" | cut -c1-12)"
     LR="$(git -C "$REPO_ROOT" rev-list --left-right --count "$base...HEAD" 2>/dev/null || echo '0	0')"
     ONLY_BASE="$(printf '%s' "$LR" | cut -f1)"
@@ -392,10 +378,8 @@ cmd_drift() {
     [ "$n_del" -gt 0 ] && printf '%s\t%s of its files are gone\n' "${node%.md}" "$n_del"
   done < "$WORK/node-baseline.tsv"
 
-  # Coverage drift: paths added since a baseline that no node claims. `stale` cannot
-  # report these at all -- a file absent from every `sources` list is invisible to a
-  # hash comparison. Split by whether the clustering patterns would already claim
-  # them on a re-run, because only the remainder needs a human-scale decision.
+  # Added paths that no node claims. Split by whether a manifest pattern would
+  # already claim them, so only the remainder needs a decision.
   cat "$WORK"/diff-*.add 2>/dev/null | LC_ALL=C sort -u > "$WORK/added.txt"
   if [ -s "$WORK/added.txt" ]; then
     jq -r 'keys[]' "$WORK/_index.json" | LC_ALL=C sort > "$WORK/claimed.txt"

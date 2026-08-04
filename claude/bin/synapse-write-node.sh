@@ -4,43 +4,33 @@
 # mirror, and PUTs the note via the Obsidian Local REST API.
 #
 # Usage: synapse-write-node.sh --title <t> --summary <s> --paths <file> --body <file>
+#        synapse-write-node.sh --help
 #
-#   --title   node title, used verbatim as the H1 and (sanitized) as the filename
-#   --summary one line differentiating this node from its siblings, stored as the
-#             `summary` frontmatter field and read back by
-#             synapse-build-project-index.sh to build the index bullet. It lives on
-#             the node so there is exactly one copy: a separate summaries file would
-#             let the index describe a node as it used to be, with nothing to detect
-#             the drift. Authored for the index, deliberately not the node's opening
-#             sentence -- one differentiates among dozens of siblings, the other
-#             orients a reader already inside.
-#   --paths   file of repo-relative paths, one per line -- ALL files the node covers
-#   --body    file holding the authored prose (## Summary / ## Crux / ## Links);
-#             `## Sources` and the generated fences are appended by this script
+#   --title    node title. Used verbatim as the H1, and sanitized for the filename.
+#   --summary  one line for the index bullet, stored as the `summary` frontmatter
+#              field. Written for the index, not as the node's opening sentence.
+#   --paths    file of repo-relative paths, one per line: every file the node covers.
+#   --body     file holding the authored prose (## Summary / ## Crux / ## Links).
+#              `## Sources` and the generated fences are added by this script.
 #
-# Why a script rather than something Claude writes inline: the "never a context
-# read" rule in synapse-query.sh is symmetric -- a hub node's `sources` runs to
-# tens of thousands of tokens, so it cannot be *emitted* into a tool call any
-# more than it can be read into a window. Here the caller supplies only prose and
-# a path list; hashing, the digest, the module mirror and the PUT happen out of
-# context. Same architecture as synapse-query.sh: bash + jq + curl.
-#
-# Note for agent callers: the Obsidian REST API listens on 127.0.0.1, which
-# Claude Code's network sandbox blocks -- curl fails with exit 7 and no message.
-# Invoke with the sandbox disabled.
+# Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
+# need the network sandbox disabled, or curl fails with exit 7 and no message.
 #
 # Exit codes:
-#   0 - node written (prints "<file>\t<n> files\t<digest>")
+#   0 - node written; prints "<file>\t<n> files\t<digest>"
 #   1 - could not run (missing dependency, no vault, remote mismatch, PUT failed)
 #   2 - usage error
+#
+# Design rationale lives in docs/synapse.md, not here.
 set -euo pipefail
 
 readonly CONF="$HOME/.claude/second-brain.conf"
 readonly CERT="$HOME/.claude/obsidian-local-rest-api-ca.pem"
 
-usage() {
-    sed -n '6,24p' "$0" | sed 's/^# \{0,1\}//' >&2
-    exit 2
+# Prints the header block, so help and the generated reference cannot disagree.
+usage() { # usage [exit-code]
+    awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
+    exit "${1:-2}"
 }
 
 node_title=""
@@ -50,6 +40,7 @@ body_file=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help) usage 0 ;;
         --title)   node_title="${2:-}"; shift 2 || usage ;;
         --summary) node_summary="${2:-}"; shift 2 || usage ;;
         --paths)   paths_file="${2:-}"; shift 2 || usage ;;
@@ -132,10 +123,8 @@ if curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
     fi
 fi
 
-# Sanitize filesystem-illegal characters for the vault filename. NOTE: a title
-# that needs sanitizing breaks inbound [[wikilinks]], which resolve by filename.
-# Prefer rewording the title so sanitize(title) == title; the warning below fires
-# when it doesn't.
+# Obsidian resolves a wikilink by filename, so a sanitized title silently breaks
+# inbound links. Hence the warning below rather than a silent rename.
 file_title="$(printf '%s' "$node_title" | tr '/:*?"<>|' '_')"
 if [[ "$file_title" != "$node_title" ]]; then
     echo "synapse-write-node: WARNING title needed sanitizing, so [[$node_title]] will not resolve" >&2
@@ -143,12 +132,9 @@ if [[ "$file_title" != "$node_title" ]]; then
 fi
 
 # --- preserve everything after the generated region --------------------------
-# `## Notes` is human-authored and guaranteed "preserved verbatim forever after",
-# so a rebuild must re-emit whatever currently follows the closing fence rather
-# than reset it to an empty section. A blind PUT would destroy a human's notes
-# silently -- the one failure the whole fencing scheme exists to prevent. A node
-# that has never been written, or one built before fencing existed, falls back to
-# a fresh empty section.
+# Re-emit whatever follows the closing fence, so a rebuild cannot destroy
+# human-authored `## Notes`. Falls back to a fresh empty section for a node that
+# has never been written, or one built before fencing existed.
 node_tail=""
 if curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
         -H "Accept: text/markdown" -o "$work/existing.md" \
@@ -160,12 +146,10 @@ fi
 # --- hashes, in the same order as the (deduped, sorted) path list ------------
 LC_ALL=C sort -u "$paths_file" > "$work/paths.txt"
 
-# Check every path first. `git hash-object --stdin-paths` aborts the whole batch
-# on the first bad entry with a raw git error, so without this the caller gets
-# exit 128 and no idea which path was at fault. Two things land here: a path that
-# has since been deleted, and a submodule gitlink -- `git ls-files` reports one
-# entry per submodule, but it is a directory on disk. This is the same -f
-# pre-check, for the same reason, that synapse-query.sh's `stale` does.
+# Check every path first: `git hash-object --stdin-paths` aborts the whole batch
+# on the first bad entry, leaving the caller exit 128 and no offending path. Hits
+# deleted paths and submodule gitlinks (one ls-files entry, but a directory on
+# disk). Same -f pre-check as synapse-query.sh's `stale`.
 bad_paths="$(while IFS= read -r p; do
     [[ -f "$REPO_ROOT/$p" ]] || printf '%s ' "$p"
 done < "$work/paths.txt")"
@@ -177,28 +161,19 @@ fi
 
 (cd "$REPO_ROOT" && git hash-object --stdin-paths < "$work/paths.txt") > "$work/hashes.txt"
 
-# --- baseline commit, for drift detection ------------------------------------
-# Recorded so a later run can ask `git diff <commit>..HEAD` instead of re-hashing
-# the world -- and, more importantly, so it can see additions, deletions and
-# renames, which comparing hashes of already-known paths cannot detect at all.
+# --- baseline commit, for `synapse-query.sh drift` ---------------------------
+# Full sha, never abbreviated: an abbreviation unique today can become ambiguous
+# as history grows. Omitted, not empty, when HEAD does not resolve (nothing
+# committed yet).
 #
-# Stored in full, never abbreviated: git itself picks 12 characters on a repo of a
-# few hundred thousand commits and lengthens further as history grows, so a stored
-# 6- or 7-character prefix is a collision waiting to happen. Abbreviate when
-# displaying, not when recording.
-#
-# Absent in a repo whose HEAD does not resolve yet (files staged, nothing
-# committed). The field is then omitted rather than left empty, and a drift check
-# treats a missing baseline the same as an unusable one: fall back to a full sweep.
-# `--verify --quiet`, not a bare `rev-parse HEAD`: without --verify, git echoes the
-# unresolvable name "HEAD" to *stdout* while failing, so the baseline would come out
-# as the literal string and the diff below would then die on it.
+# `--verify --quiet`, not a bare `rev-parse HEAD`: without --verify git echoes the
+# unresolvable name "HEAD" to stdout while failing, so the baseline would be set to
+# that literal string and the diff below would die on it.
 node_commit="$(git -C "$REPO_ROOT" rev-parse --verify --quiet HEAD || true)"
 
-# `git hash-object` fingerprints the *worktree*, so if any of this node's own
-# sources differ from HEAD then the recorded commit is "what was checked out", not
-# a faithful baseline. Warn narrowly -- on this node's sources rather than the whole
-# tree -- so it stays quiet during ordinary work elsewhere in the repo.
+# Hashes come from the worktree, so a dirty source makes the recorded commit
+# approximate. Scoped to this node's own paths, to stay quiet during work
+# elsewhere in the repo.
 if [[ -n "$node_commit" ]]; then
     (cd "$REPO_ROOT" && git diff --name-only HEAD) | LC_ALL=C sort > "$work/dirty.txt"
     dirty_sources="$(comm -12 "$work/dirty.txt" "$work/paths.txt" | head -3 | tr '\n' ' ')"
@@ -278,9 +253,7 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
 } > "$work/note.md"
 
 # --- PUT into the vault -----------------------------------------------------
-# Overwrites the generated region wholesale. `## Notes` is human-authored and
-# lives outside the fences, so a rebuild of an existing node must merge rather
-# than blind-PUT; this script is for first builds and full regenerations.
+# Overwrites the generated region; $node_tail above carries everything after it.
 http_code="$(curl -s -o "$work/resp" -w '%{http_code}' -X PUT \
     --cacert "$CERT" \
     -H "Authorization: Bearer $API_KEY" \
