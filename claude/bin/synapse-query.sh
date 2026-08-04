@@ -14,6 +14,10 @@
 #   drift                              what changed since each node's recorded commit
 #   grounding                          nodes whose recorded evidence no longer matches
 #   grounding <node> --list            that node's groundings, as path<TAB>lines
+#   links   <node>                     outbound relations, as relation<TAB>target
+#   links   <node> --inbound           what points here, as relation<TAB>source
+#   links   <node> --closure           every node reachable outbound, depth<TAB>node
+#   links   --check                    link targets that resolve to no node
 #
 # <node> may be given with or without the trailing `.md`.
 #
@@ -45,7 +49,7 @@ shift
 # run" (exit 1) for a typo'd subcommand just because Obsidian happens to be
 # down would send the caller looking in the wrong place entirely.
 case "$SUB" in
-  body|sources|field|stale|drift|grounding) ;;
+  body|sources|field|stale|drift|grounding|links) ;;
   -h|--help) usage 0 ;;
   *) usage ;;
 esac
@@ -526,6 +530,89 @@ cmd_drift() {
 # rebuild the `<!-- grounded_in: ... -->` directives it needs to re-emit. Without
 # this the round trip loses them silently: they live in frontmatter, and `body`
 # returns prose, so writing a recovered body back would drop every grounding.
+# --- links: relations between nodes, derived rather than cached --------------
+# Relations are node-scale, not file-scale: a few dozen nodes and a couple of
+# hundred edges is kilobytes, derived from disk in about a tenth of a second. So
+# there is deliberately no cached `_relations.json` -- a fourth derived artifact
+# would need rebuilding after every write and would mislead silently once stale,
+# and caching buys nothing when derivation is already free.
+#
+# Reads node files from disk. That is the infrastructure case, not note content:
+# the question is what the graph asserts about itself, and the API cannot answer
+# it. Obsidian's link graph is untyped, so a relation written `- depends_on [[X]]`
+# is prose to it -- exactly queryable via `in` on `content`, but one request per
+# question and no transitive or aggregate answers at all.
+
+# source<TAB>relation<TAB>target for every link in this namespace.
+node_edges() {
+  local dir="$VAULT/synapse/$REPO_NAME" f
+  for f in "$dir"/*.md; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in Index.md) continue ;; esac
+    awk -v src="$(basename "$f" .md)" '
+      /^## Links$/ { inl = 1; next }
+      inl && /^## / { exit }
+      inl && /^-[[:space:]]*[^[:space:]]+[[:space:]]*\[\[[^]]+\]\]/ {
+        rel = $0; sub(/^-[[:space:]]*/, "", rel); sub(/[[:space:]]*\[\[.*$/, "", rel)
+        tgt = $0; sub(/^[^[]*\[\[/, "", tgt); sub(/\]\].*$/, "", tgt)
+        printf "%s\t%s\t%s\n", src, rel, tgt
+      }' "$f"
+  done
+}
+
+cmd_links() {
+  case "${1:-}" in
+    --check)
+      [ $# -eq 1 ] || usage
+      # Every target must name a node that exists. A broken wikilink is a valid
+      # link to a not-yet-existing note, so Obsidian renders it without complaint
+      # and nothing else in the system notices.
+      : > "$WORK/nodes-present.txt"
+      for f in "$VAULT/synapse/$REPO_NAME"/*.md; do
+        [ -f "$f" ] || continue
+        basename "$f" .md >> "$WORK/nodes-present.txt"
+      done
+      LC_ALL=C sort -u "$WORK/nodes-present.txt" -o "$WORK/nodes-present.txt"
+      node_edges | while IFS="$(printf '\t')" read -r src rel tgt; do
+        grep -qxF "$tgt" "$WORK/nodes-present.txt" && continue
+        printf '%s\t%s -> %s (no such node)\n' "$src" "$rel" "$tgt"
+      done
+      ;;
+    "" ) usage ;;
+    -* ) usage ;;
+    * )
+      local node="${1%.md}"
+      fetch_node "$1" >/dev/null || exit 1
+      case "${2:-}" in
+        "")
+          node_edges | awk -F'\t' -v n="$node" '$1 == n { print $2 "\t" $3 }' | LC_ALL=C sort ;;
+        --inbound)
+          [ $# -eq 2 ] || usage
+          node_edges | awk -F'\t' -v n="$node" '$3 == n { print $2 "\t" $1 }' | LC_ALL=C sort ;;
+        --closure)
+          [ $# -eq 2 ] || usage
+          # Breadth-first, so the depth printed is the shortest hop count, and a
+          # cycle terminates instead of looping.
+          node_edges | awk -F'\t' -v start="$node" '
+            { adj[$1] = adj[$1] "\001" $3 }
+            END {
+              n = 1; queue[1] = start; seen[start] = 1; depth[start] = 0
+              for (i = 1; i <= n; i++) {
+                cur = queue[i]
+                m = split(adj[cur], t, "\001")
+                for (j = 2; j <= m; j++) {
+                  if (t[j] == "" || (t[j] in seen)) continue
+                  seen[t[j]] = 1; depth[t[j]] = depth[cur] + 1
+                  queue[++n] = t[j]
+                  print depth[t[j]] "\t" t[j]
+                }
+              }
+            }' | LC_ALL=C sort -k1,1n -k2,2 ;;
+        *) usage ;;
+      esac ;;
+  esac
+}
+
 cmd_grounding_list() { # cmd_grounding_list <node>
   local want="${1%.md}"
   # Verifies the node exists before reporting "no groundings", so a typo'd title
@@ -589,4 +676,5 @@ case "$SUB" in
   stale)   cmd_stale "$@" ;;
   drift)   cmd_drift "$@" ;;
   grounding) cmd_grounding "$@" ;;
+  links)   cmd_links "$@" ;;
 esac

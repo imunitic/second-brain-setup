@@ -223,11 +223,15 @@ not merely stale, if the subsystem's shape differs on this line.
 ~/.claude/bin/synapse-query.sh drift     # expect silence
 ~/.claude/bin/synapse-query.sh stale     # expect silence
 ~/.claude/bin/synapse-query.sh grounding # expect silence: re-pointed, not dropped
+~/.claude/bin/synapse-query.sh links --check   # expect silence: no dangling targets
 ```
 
-Then the two checks nothing else performs: every `[[wikilink]]` in the namespace resolves to a file
-that exists, and every node file appears in `Index.md`. A broken wikilink is a valid link to a
-not-yet-existing note, so it fails quietly; an unlisted node exists but is invisible to a reader.
+`links --check` covers what used to be a manual instruction here: a broken `[[wikilink]]` is a valid
+link to a not-yet-existing note, so Obsidian renders it without complaint and nothing else in the
+system notices. It now reports `Node<TAB>relation -> Target (no such node)` per dangling edge.
+
+One check is still yours, because no command performs it: **every node file appears in `Index.md`**. An
+unlisted node exists and is reachable by search, but is invisible to anyone reading the map.
 
 ### 6. Report what happened
 

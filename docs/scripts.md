@@ -119,6 +119,10 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
   drift                              what changed since each node's recorded commit
   grounding                          nodes whose recorded evidence no longer matches
   grounding <node> --list            that node's groundings, as path<TAB>lines
+  links   <node>                     outbound relations, as relation<TAB>target
+  links   <node> --inbound           what points here, as relation<TAB>source
+  links   <node> --closure           every node reachable outbound, depth<TAB>node
+  links   --check                    link targets that resolve to no node
 
 <node> may be given with or without the trailing `.md`.
 

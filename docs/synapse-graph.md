@@ -233,6 +233,34 @@ worth catching.
 Tier 1 therefore answers two questions rather than one: whether something under a node changed, and —
 for the narrow slice it can see — whether a specific claim may no longer hold.
 
+### Relations between nodes, derived rather than stored
+
+A node's `## Links` section records typed relations — `- depends_on [[Other Node]]`, `uses`, `part_of`.
+Obsidian's own link graph is untyped: it knows Alpha links to Beta, not *why*, because the relation word
+is prose on the line. So `synapse-query.sh links` derives the typed graph from the node files:
+
+    links <node>              outbound, relation<TAB>target
+    links <node> --inbound    what points here, relation<TAB>source
+    links <node> --closure    every node reachable outbound, depth<TAB>node
+    links --check             targets that resolve to no node
+
+There is deliberately **no cached `_relations.json`**. A namespace is node-scale here, not file-scale —
+a few dozen nodes and a couple of hundred edges is kilobytes, derived in about a tenth of a second — so
+a cached projection would be a fourth artifact needing rebuild after every write, misleading silently
+once stale, in exchange for a saving of nothing. Caching earns its keep when derivation is expensive;
+this is the case where it does not.
+
+`--check` is the one that pays for itself. A broken `[[wikilink]]` is a valid link to a not-yet-existing
+note, so Obsidian renders it without complaint and no other check notices — it used to be a manual
+instruction in `/synapse-rebuild` and is now a command.
+
+The API can answer the single-hop question exactly, with `{"in": ["depends_on [[Target]]", {"var":
+"content"}]}` — substring rather than tokenised, so unlike `/search/simple/` it does not return a node
+whose only relation to that target is a different one. What it cannot do is transitive or aggregate:
+closure needs one request per hop, and orphans, hubs and cycles are not expressible at all. That is the
+gap `links` fills, and the reason it reads from disk — it is asking what the graph asserts about itself,
+which is infrastructure rather than note content.
+
 ## What a session is told at startup
 
 The `SessionStart` hook injects two things, and neither is stored anywhere:
