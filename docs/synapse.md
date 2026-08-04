@@ -8,7 +8,18 @@ searchable the same way any other note is. It's inspired by
 [NanoNets/Graft](https://github.com/NanoNets/Graft) but deliberately much smaller in scope — single
 consumer (Claude Code only), no multi-agent wiring, no standing CLI surface.
 
-![Synapse two-tier staleness and tree-sitter acceleration](diagrams/synapse-tiers.png)
+![Every Synapse script across the build, read, detect and repair phases](diagrams/synapse-pipeline.png)
+
+The whole system in one picture, and the layout carries an argument. Three lanes — what the **model**
+judges, what a **script** executes, what lands in the **vault** — because the division between the
+first two is the design rule everything else follows from, and drawn this way it is visible rather
+than asserted: arrows cross from the model lane into the script lane in exactly two places,
+`manifest.tsv` and the authored `b-NN.md` prose bodies. Every other step of a build is mechanical and
+never leaves the script lane. The four phases read left to right and top to bottom — build, then read,
+then detect, then repair — and the repair arrow closes the loop by returning to
+`synapse-write-node.sh`, which re-records each node's `commit` and so sets the baseline the next
+`drift` measures against. Per-script usage and exit codes are in [scripts.md](scripts.md); the
+sections below are the reasoning.
 
 ## Dormant until opted in
 
@@ -147,6 +158,8 @@ Cost is one `grep` fork regardless of namespace count (`-m1` stops inside each f
 Outside any git repo there is no pointer and nothing to exclude, so the catalogue lists everything. With no namespaces at all, nothing is emitted — the zero-cost path for repos that never opted in.
 
 ## Two-tier staleness
+
+![The two staleness tiers and the tree-sitter acceleration layer](diagrams/synapse-tiers.png)
 
 Both tiers answer "has content under a node changed". Neither can see a file that belongs to *no*
 node, which is what `synapse-query.sh drift` is for — see "Drift" below.
