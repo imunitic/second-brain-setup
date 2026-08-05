@@ -27,8 +27,8 @@
 # tags cache (synapse/{project}/_tags_cache.json) kept current as a byproduct
 # of node build/regeneration, with any file the cache is missing tagged
 # lazily on the spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable
-# entirely -- see designs/sb -- Deterministic per-symbol call graph
-# (wiring.json-equivalent).md for the full design.
+# entirely -- see docs/synapse-graph.md's "Exact-symbol lookup" section for
+# the full design.
 #
 # `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 # HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.

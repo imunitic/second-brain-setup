@@ -3,9 +3,9 @@
 # files, re-tagging only what changed and doing so in parallel when several
 # files need it. Shared by node build/regeneration (piggybacked on the same
 # per-file hash comparison it already performs) and synapse-query.sh's
-# `symbol` subcommand (lazy backfill on a cache miss). See
-# designs/sb -- Deterministic per-symbol call graph (wiring.json-equivalent).md
-# for the full design and the measured cost of a cold, fully-uncached run.
+# `symbol` subcommand (lazy backfill on a cache miss). See docs/synapse-graph.md's
+# "Exact-symbol lookup" section for the full design and the measured cost of
+# a cold, fully-uncached run.
 #
 # Usage: synapse-tags-cache.sh --repo-root <path> --cache <_tags_cache.json path> --paths <file>
 #   --paths  file of repo-relative path<TAB>current-git-hash lines, one per

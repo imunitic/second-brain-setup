@@ -132,8 +132,8 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
 tags cache (synapse/{project}/_tags_cache.json) kept current as a byproduct
 of node build/regeneration, with any file the cache is missing tagged
 lazily on the spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable
-entirely -- see designs/sb -- Deterministic per-symbol call graph
-(wiring.json-equivalent).md for the full design.
+entirely -- see docs/synapse-graph.md's "Exact-symbol lookup" section for
+the full design.
 
 `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
@@ -155,9 +155,9 @@ Keeps a project's synapse-tags.sh output cache current for a given set of
 files, re-tagging only what changed and doing so in parallel when several
 files need it. Shared by node build/regeneration (piggybacked on the same
 per-file hash comparison it already performs) and synapse-query.sh's
-`symbol` subcommand (lazy backfill on a cache miss). See
-designs/sb -- Deterministic per-symbol call graph (wiring.json-equivalent).md
-for the full design and the measured cost of a cold, fully-uncached run.
+`symbol` subcommand (lazy backfill on a cache miss). See docs/synapse-graph.md's
+"Exact-symbol lookup" section for the full design and the measured cost of
+a cold, fully-uncached run.
 
 ```
 Usage: synapse-tags-cache.sh --repo-root <path> --cache <_tags_cache.json path> --paths <file>
@@ -186,8 +186,9 @@ Exit codes:
 
 Prints `tree-sitter tags` output (definitions + name-based call references)
 for a single file, cloning/registering that language's grammar on first use.
-Deliberately dumb/mechanical -- no reasoning here. See sb-002's "Wiring"
-section and its `synapse-grammars.conf` registry for the design.
+Deliberately dumb/mechanical -- no reasoning here. See docs/synapse-graph.md's
+"Optional tree-sitter acceleration" section and `synapse-grammars.conf`'s own
+header for the design.
 
 ```
 Usage: synapse-tags.sh <file-path>
@@ -208,8 +209,8 @@ reading the file directly -- this is never a hard dependency):
 
 Turns a raw prompt into a handful of distinctive terms for a `regexp` OR-pattern,
 entirely mechanically -- no LLM call, cheap enough to run on every turn. Built for
-the per-prompt context injection hook; see designs/sb -- Per-prompt context
-injection for Synapse.md for the full mechanism this feeds.
+the per-prompt context injection hook; see docs/synapse-graph.md's "What every
+prompt is told" section for the full mechanism this feeds.
 
 ```
 Usage: synapse-tokenizer.sh <prompt>

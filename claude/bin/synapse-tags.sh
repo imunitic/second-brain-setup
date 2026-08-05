@@ -1,8 +1,9 @@
 #!/bin/bash
 # Prints `tree-sitter tags` output (definitions + name-based call references)
 # for a single file, cloning/registering that language's grammar on first use.
-# Deliberately dumb/mechanical -- no reasoning here. See sb-002's "Wiring"
-# section and its `synapse-grammars.conf` registry for the design.
+# Deliberately dumb/mechanical -- no reasoning here. See docs/synapse-graph.md's
+# "Optional tree-sitter acceleration" section and `synapse-grammars.conf`'s own
+# header for the design.
 #
 # Usage: synapse-tags.sh <file-path>
 #   Grammar cache dir: $SYNAPSE_GRAMMARS_DIR, default ~/.cache/synapse/grammars/.

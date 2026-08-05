@@ -1,8 +1,8 @@
 #!/bin/bash
 # Turns a raw prompt into a handful of distinctive terms for a `regexp` OR-pattern,
 # entirely mechanically -- no LLM call, cheap enough to run on every turn. Built for
-# the per-prompt context injection hook; see designs/sb -- Per-prompt context
-# injection for Synapse.md for the full mechanism this feeds.
+# the per-prompt context injection hook; see docs/synapse-graph.md's "What every
+# prompt is told" section for the full mechanism this feeds.
 #
 # Usage: synapse-tokenizer.sh <prompt>
 #   Character class: $SYNAPSE_TOKENIZER_EXTRA_CHARS, default empty -- appended onto

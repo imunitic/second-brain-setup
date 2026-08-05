@@ -1,7 +1,7 @@
 #!/bin/bash
 # UserPromptSubmit hook: inject matching Synapse nodes into context on every
-# turn, not just once at session start -- see designs/sb -- Per-prompt context
-# injection for Synapse.md for the full mechanism and why. Set
+# turn, not just once at session start -- see docs/synapse-graph.md's "What
+# every prompt is told" section for the full mechanism and why. Set
 # SYNAPSE_DISABLE_PROMPT_INJECTION (any value) to disable entirely.
 #
 # Every exit path before the final output is a genuine zero/near-zero-cost

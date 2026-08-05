@@ -3,10 +3,10 @@
 # with the Synapse Vault map already in context instead of relying on the
 # agent to think to go read it.
 #
-# Also does the Synapse pointer check (see sb-001 -- Synapse implementation).
-# The existence check below is a plain path lookup, never a model call or
-# an HTTP round-trip -- that's what keeps this zero-cost for every repo
-# that never ran /synapse-init.
+# Also does the Synapse pointer check -- see docs/synapse-graph.md's "What a
+# session is told at startup" section for the design. The existence check
+# below is a plain path lookup, never a model call or an HTTP round-trip --
+# that's what keeps this zero-cost for every repo that never ran /synapse-init.
 # synapse.conf, falling back to the name this file had before the project was
 # renamed, so scripts updated ahead of setup.sh still find an existing config
 # rather than reporting "no vault".

@@ -233,7 +233,7 @@ hashes_n="$(wc -l < "$work/hashes.txt" | tr -d ' ')"
 # `synapse-query.sh symbol` is a pure cache read. Piggybacks on the hashes
 # just computed above rather than re-deriving its own staleness signal. Never
 # fatal: a failure here should not block writing the node itself. See
-# designs/sb -- Deterministic per-symbol call graph (wiring.json-equivalent).md
+# docs/synapse-graph.md's "Exact-symbol lookup" section for the full design.
 if [[ -z "${SYNAPSE_DISABLE_SYMBOL_CACHE:-}" ]]; then
     tags_cache_sh="$HOME/.claude/bin/synapse-tags-cache.sh"
     if [[ -x "$tags_cache_sh" ]]; then
