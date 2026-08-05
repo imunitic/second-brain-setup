@@ -5,6 +5,7 @@
 # section and its `synapse-grammars.conf` registry for the design.
 #
 # Usage: synapse-tags.sh <file-path>
+#   Grammar cache dir: $SYNAPSE_GRAMMARS_DIR, default ~/.cache/synapse/grammars/.
 #
 # Exit codes (every caller must fail soft on any non-zero and fall back to
 # reading the file directly -- this is never a hard dependency):
