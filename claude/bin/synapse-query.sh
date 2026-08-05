@@ -216,16 +216,32 @@ extract_source_paths() { # frontmatter `sources:` list `  - path: X` lines only,
   ' "$1"
 }
 
-# Aggregation key for --modules. Everything up to the first `src` segment, so
-# `lightweight/lightweight-impl/src/main/java/...` groups as
-# `lightweight/lightweight-impl` while `gui-utc-core/src/...` stays
-# `gui-utc-core`. MUST match the rule /synapse-init uses for the `## Sources`
-# mirror -- two groupings for one concept is a divergence nobody notices for
-# months.
+# Aggregation key for --modules. Two shapes share the `src/` marker and need
+# opposite treatment. Maven/Gradle's `src/main/java`, `src/test/java` and
+# `src/main/resources` are fixed boilerplate carrying no subsystem information
+# of their own -- the real module name lives entirely in the segment before
+# `src/`, so `lightweight/lightweight-impl/src/main/java/...` groups as
+# `lightweight/lightweight-impl`. A flat `<pkg>/src/<subsystem>/...` layout
+# (OCaml, Rust, Go, ...) has no such boilerplate: the segment right after
+# `src/` *is* the subsystem, so stripping there the same way would erase the
+# one distinction the grouping exists to preserve -- `eon_engine/src/render`
+# and `eon_engine/src/audio` would both collapse into one `eon_engine` bucket.
+# So: strip through the known boilerplate shapes outright; otherwise keep one
+# segment past `src/`. MUST match the rule /synapse-init uses for the
+# `## Sources` mirror -- two groupings for one concept is a divergence nobody
+# notices for months.
 module_of() { # module_of <path>
   local p="$1"
   case "$p" in
-    */src/*) printf '%s' "${p%%/src/*}" ;;
+    */src/main/java/*|*/src/test/java/*|*/src/main/resources/*)
+      printf '%s' "${p%%/src/*}" ;;
+    */src/*)
+      local rest="${p#*/src/}"
+      case "$rest" in
+        */*) printf '%s/src/%s' "${p%%/src/*}" "${rest%%/*}" ;;
+        *)   printf '%s' "${p%%/src/*}" ;;
+      esac
+      ;;
     */*) printf '%s' "${p%%/*}" ;;
     *) printf '(repo root)' ;;
   esac

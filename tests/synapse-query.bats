@@ -309,18 +309,38 @@ write_fenced_node() {
 
 @test "sources: --modules groups by module root with counts" {
   make_repo
-  mkdir -p "$REPO/other/src/main"
-  printf 'x\n' > "$REPO/other/src/main/A.java"
-  git -C "$REPO" add other/src/main/A.java
+  mkdir -p "$REPO/other/src/main/java"
+  printf 'x\n' > "$REPO/other/src/main/java/A.java"
+  git -C "$REPO" add other/src/main/java/A.java
   git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m other
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
-  write_fenced_node "Foo Node.md" "src/foo.ml" "other/src/main/A.java"
+  write_fenced_node "Foo Node.md" "src/foo.ml" "other/src/main/java/A.java"
 
   run run_query sources "Foo Node" --modules
   [ "$status" -eq 0 ]
-  # `other/src/main/A.java` groups as `other`; `src/foo.ml` has src first so it
-  # is the repo root's own src -- grouped as "src" per the module_of rule.
+  # `other/src/main/java/A.java` is Maven boilerplate and groups as `other`;
+  # `src/foo.ml` has src first so it is the repo root's own src -- grouped as
+  # "src" per the module_of rule.
   [[ "$output" == *"other"$'\t'"1"* ]]
+}
+
+@test "sources: --modules keeps one segment past src/ for a non-boilerplate layout" {
+  make_repo
+  mkdir -p "$REPO/eon_engine/src/render" "$REPO/eon_engine/src/audio"
+  printf 'x\n' > "$REPO/eon_engine/src/render/render_commands.ml"
+  printf 'x\n' > "$REPO/eon_engine/src/audio/audio_system.ml"
+  git -C "$REPO" add eon_engine
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m eon_engine
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml" \
+    "eon_engine/src/render/render_commands.ml" "eon_engine/src/audio/audio_system.ml"
+
+  run run_query sources "Foo Node" --modules
+  [ "$status" -eq 0 ]
+  # Neither path is Maven boilerplate, so each keeps the segment right after
+  # src/ instead of collapsing both into one indistinguishable "eon_engine".
+  [[ "$output" == *"eon_engine/src/render"$'\t'"1"* ]]
+  [[ "$output" == *"eon_engine/src/audio"$'\t'"1"* ]]
 }
 
 @test "field: returns unquoted scalars, empty for an absent key" {
