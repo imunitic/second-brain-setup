@@ -1,15 +1,14 @@
 # Second Brain Task Note: Compile a Design into a Tracked Checklist
 
-The Obsidian-vault counterpart to `/task-note` — compiles a `Ready` design note (from
-`/synapse-design-note`) into a single tracked task, using the vault's existing task-tracking
-machinery instead of a bespoke format: creation goes through `/synapse-note --task`, and status
-transitions from then on belong entirely to the `synapse-task` skill. This command's only job is
-the compile step — turning a design into an ordered checklist — not tracking progress itself.
+Compiles a `Ready` design note (from `/synapse-design-note`) into a single tracked task, using the
+vault's existing task-tracking machinery instead of a bespoke format: creation goes through
+`/synapse-note --task`, and status transitions from then on belong entirely to the `synapse-task`
+skill. This command's only job is the compile step — turning a design into an ordered checklist —
+not tracking progress itself.
 
-Unlike `/task-note`, there is no separate multi-task file-level state (`Planned`/`In Progress`/
-`Review`/`Done` across several `### Task N` entries). One design compiles into **one** task note,
-one `task_id`, and the checklist items *are* the steps — matching how every other task in the vault
-already works (see `synapse-task`'s "Task file structure").
+One design compiles into **one** task note, one `task_id`, and the checklist items *are* the
+steps — matching how every other task in the vault already works (see `synapse-task`'s "Task file
+structure").
 
 ## Usage
 
@@ -50,8 +49,7 @@ Use those instead of reinventing a parallel view.
 ## Compiling the checklist
 
 1. Read the design note in full.
-2. Break the approach into an ordered list of small, sequential, independently-completable steps —
-   same judgment `/task-note` step 4 uses.
+2. Break the approach into an ordered list of small, sequential, independently-completable steps.
 3. For each step, write it the way `synapse-task`'s own checklist convention expects: a short
    `- [ ] {Do}` line; for substantive steps (type definitions, API surfaces, interface signatures)
    add a one-line nested description plus a fenced code block showing the exact interface, per that
@@ -102,7 +100,6 @@ command doesn't set or watch that field itself.
 - Reads `/synapse-design-note`'s `Ready` output only — never invents a design.
 - Delegates note creation to `/synapse-note --task` and status tracking to the `synapse-task` skill
   — this command owns only the design → checklist compile step.
-- Independent of `/task-note`/`docs/notes/` — a topic lives in one system or the other, not both.
 
 ---
 

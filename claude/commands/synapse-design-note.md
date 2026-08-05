@@ -1,13 +1,12 @@
 # Second Brain Design Note: Cross-Project Personal Design Discussion
 
-The Obsidian-vault counterpart to `/design-note` — same free-form "think it through out loud"
-pipeline, but the note lives in Synapse Vault instead of the current repo's `docs/notes/`.
-Use it when the design conversation isn't (or shouldn't be) tied to one repo's private-note
-lifecycle — it's findable from any project immediately, with no separate pointer-note step, because
-the vault itself is already the cross-project store.
+A free-form "think it through out loud" pipeline for a design conversation, written to Synapse
+Vault rather than any one repo. Use it when the design conversation isn't (or shouldn't be) tied
+to one repo's lifecycle — it's findable from any project immediately, with no separate
+pointer-note step, because the vault itself is already the cross-project store.
 
 Not every design discussion ends with something to build. See `Status: Reference` below for the
-"no implementation attached" ending — same distinction `/design-note` makes.
+"no implementation attached" ending.
 
 ## Usage
 
@@ -17,20 +16,10 @@ Not every design discussion ends with something to build. See `Status: Reference
 /synapse-design-note --list            # List every Obsidian design note, regardless of status
 ```
 
-## When to use this vs. `/design-note` vs. `/design`
-
-| Use `/synapse-design-note` when... | Use `/design-note` when... | Use `/design` when... |
-|---|---|---|
-| Might be relevant beyond this one repo, or you want it searchable from anywhere | Purely local to this repo's work, fine being invisible elsewhere | Team needs to see the decision |
-| Fine living in the shared personal vault | Fine with a private, gitignored note in this repo | Feature will definitely ship, others are affected |
-
-Both private variants are equally throwaway-able — the difference is *where* the throwaway lives,
-not how seriously to take the conversation.
-
 ## Prerequisites
 
 - Requires the `obsidian` MCP server (`mcp__obsidian__*` tools). If unreachable, say so and stop —
-  there is no local-file fallback for this command, unlike `/design-note`.
+  there is no local-file fallback for this command.
 - If `designs/` doesn't exist in the vault yet, `mcp__obsidian__vault_write` creates it implicitly on
   first write — but add a `designs/` entry to the vault's `Index.md` folder layout in the same
   action (per the Synapse Vault folder-layout rule: a new top-level folder must never fall behind the
@@ -90,15 +79,15 @@ unrelated contexts (e.g. personal vs. work) never end up in the same place.
 1. `mcp__obsidian__vault_list` on `designs/`, then `vault_read` each (or a `search_query` scoped to
    that path) to pull title and `## Status`.
 2. None found → "No design notes yet. Start one with `/synapse-design-note \"topic\"`."
-3. Group into **Active** (`Discussing`, `Ready`) and **Closed** (`Reference`) — active first. Same
-   output shape as `/design-note --list` (title + status in backticks, not bold).
+3. Group into **Active** (`Discussing`, `Ready`) and **Closed** (`Reference`) — active first, title
+   and status in backticks, not bold.
 
 ---
 
 ## Workflow
 
-Identical to `/design-note`'s: free-form conversation, no fixed step order. Create the note on the
-first substantive answer and update it after every meaningful exchange — don't wait until the end.
+Free-form conversation, no fixed step order. Create the note on the first substantive answer and
+update it after every meaningful exchange — don't wait until the end.
 
 **Write it as settled understanding, not as a transcript of how it was reached.** Updating after
 every exchange is about *when* to write, not license to narrate the conversation in the prose
@@ -123,8 +112,6 @@ Angles worth covering (skip whatever's not relevant):
 
 ### Concluding: Ready or Reference
 
-Same rule as `/design-note`:
-
 - **Something to build** → `Status: Ready`. Confirm: "Design note ready: `designs/{title}.md`.
   Whenever you're ready to implement, generate the task with
   `/synapse-task-note \"{topic}\"` — no rush, nothing here expires."
@@ -133,9 +120,9 @@ Same rule as `/design-note`:
 
 If genuinely unsure which, ask the user directly.
 
-There is no closing/renaming step here (unlike `/design-note`'s `.open.md` → `.md`) — nothing reads
-these notes automatically at session start, so the `## Status` line is the only lifecycle marker
-that matters. It simply stays `Ready`/`Reference` indefinitely.
+There is no closing/renaming step here — nothing reads these notes automatically at session start,
+so the `## Status` line is the only lifecycle marker that matters. It simply stays
+`Ready`/`Reference` indefinitely.
 
 ---
 
@@ -183,10 +170,7 @@ slug, no numbering — Obsidian filenames are the title itself.
 
 ## Integration
 
-- `/synapse-task-note "{topic}"` reads the matching `Ready` note as its only input, same restriction
-  `/task-note` places on `/design-note`.
-- Fully separate from `/design-note`/`docs/notes/` — a topic lives in exactly one of the two systems,
-  never both. Choose per "When to use this vs." above before starting, not after.
+- `/synapse-task-note "{topic}"` reads the matching `Ready` note as its only input.
 
 ---
 
