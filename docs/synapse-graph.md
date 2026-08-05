@@ -138,7 +138,16 @@ Worth stating plainly, because conflating the two produces a real bug — trimmi
   the mirror is for.
 - **`## Sources` is aggregated, not enumerated**: one line per owning directory/module with a file
   count. A node covering 941 files would otherwise put 75 KB of paths in front of a reader who wants
-  to know which modules are involved.
+  to know which modules are involved. The aggregation key (`module_of()` in `synapse-query.sh`,
+  re-implemented identically in `synapse-write-node.sh` -- the two must never drift) is everything
+  before a path's first `/src/`, *except* for a configured list of boilerplate chains
+  (`~/.claude/synapse-module-boilerplate.conf`, seeded with Maven/Gradle's `src/main/java`,
+  `src/test/java`, `src/main/resources`) which strip through to the segment before `src/` entirely.
+  The distinction matters: Maven's `src/main/java/...` carries no subsystem information of its own,
+  but a flat `<pkg>/src/<subsystem>/...` layout (OCaml, Rust, Go, ...) has no such boilerplate -- the
+  segment right after `src/` *is* the subsystem, so collapsing it the same way erases the one
+  distinction the mirror exists to preserve. Add a repo's own conventions to that config file rather
+  than special-casing them in the scripts.
 - **`## Notes` is human-authored only.** Claude never writes there, at build or regeneration.
 - Everything the generator owns sits between `<!-- synapse:generated:start -->` and
   `<!-- synapse:generated:end -->`. Regeneration replaces only the bytes between those markers and
