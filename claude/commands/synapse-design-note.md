@@ -100,6 +100,21 @@ unrelated contexts (e.g. personal vs. work) never end up in the same place.
 Identical to `/design-note`'s: free-form conversation, no fixed step order. Create the note on the
 first substantive answer and update it after every meaningful exchange — don't wait until the end.
 
+**Write it as settled understanding, not as a transcript of how it was reached.** Updating after
+every exchange is about *when* to write, not license to narrate the conversation in the prose
+itself. A section should read as if authored fresh today, stating the problem/approach/constraints
+as they now stand — never as a log of what changed ("corrected during discussion," "reworked during
+a live investigation," "the user pointed out," "originally X, now Y"). This applies strictly to
+`## Problem`, `## Constraints`, and `## Open Questions` — always direct, current statements, no
+exceptions.
+
+`## Approach` is the one place a *trail* can be legitimate content — a rejected alternative and why
+it failed is real, useful information for whoever reads this later, worth keeping even once the
+working approach makes it moot. But phrase it as a fact about the solution space ("X fails because
+Y, confirmed by Z"), never as commentary on the discussion that found it ("investigation showed,"
+"the first attempt was"). Test: would the sentence still make sense to someone who wasn't in the
+conversation and has no idea anything was ever revised? If not, rewrite it as a direct statement.
+
 Angles worth covering (skip whatever's not relevant):
 - What problem are we solving, and why now?
 - What's the chosen approach? If there were real alternatives, a one-line "why not" for each.
