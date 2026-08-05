@@ -343,6 +343,29 @@ write_fenced_node() {
   [[ "$output" == *"eon_engine/src/audio"$'\t'"1"* ]]
 }
 
+@test "sources: --modules boilerplate chains are read from config, not hardcoded" {
+  make_repo
+  mkdir -p "$REPO/mod-a/src/main/kotlin"
+  printf 'x\n' > "$REPO/mod-a/src/main/kotlin/A.kt"
+  git -C "$REPO" add mod-a
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m kotlin
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml" "mod-a/src/main/kotlin/A.kt"
+
+  # Not in the shipped default list yet: falls through to the generic rule,
+  # keeping one segment past src/ rather than collapsing to "mod-a".
+  run run_query sources "Foo Node" --modules
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mod-a/src/main"$'\t'"1"* ]]
+
+  # Add it to the config, same as a user would by hand -- now it collapses,
+  # proving the chain list is genuinely read from disk each run.
+  printf 'src/main/kotlin\n' >> "$HOME/.claude/synapse-module-boilerplate.conf"
+  run run_query sources "Foo Node" --modules
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mod-a"$'\t'"1"* ]]
+}
+
 @test "field: returns unquoted scalars, empty for an absent key" {
   make_repo
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"

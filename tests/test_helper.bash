@@ -38,6 +38,11 @@ common_setup() {
   cat > "$HOME/.claude/synapse.conf" <<EOF
 OBSIDIAN_VAULT_DIR="$VAULT"
 EOF
+
+  # Seeded from the shipped template so tests exercise the real default
+  # boilerplate list, not a hand-copied duplicate that could drift from it.
+  cp "$REPO_ROOT/claude/synapse-module-boilerplate.conf.template" \
+    "$HOME/.claude/synapse-module-boilerplate.conf"
 }
 
 # In-place sed that works on both BSD and GNU. `sed -i ''` is BSD-only (GNU reads

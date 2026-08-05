@@ -65,6 +65,21 @@ CONF="$HOME/.claude/synapse.conf"
 VAULT="${OBSIDIAN_VAULT_DIR:-}"
 [ -n "$VAULT" ] && [ -d "$VAULT" ] || exit 1
 
+# Boilerplate path-segment chains (e.g. src/main/java) for module_of() below --
+# see synapse-module-boilerplate.conf's own header for what these are and why
+# they're configured rather than hardcoded. Absent file means no boilerplate
+# chains are known, not a hard failure: module_of() still works, just without
+# collapsing any ecosystem's src/ scaffolding.
+MODULE_BOILERPLATE_CONF="$HOME/.claude/synapse-module-boilerplate.conf"
+MODULE_BOILERPLATE=()
+if [ -f "$MODULE_BOILERPLATE_CONF" ]; then
+  while IFS= read -r chain; do
+    chain="${chain%%#*}"
+    chain="$(printf '%s' "$chain" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [ -n "$chain" ] && MODULE_BOILERPLATE+=("$chain")
+  done < "$MODULE_BOILERPLATE_CONF"
+fi
+
 command -v jq >/dev/null || exit 1
 command -v git >/dev/null || exit 1
 
@@ -218,23 +233,28 @@ extract_source_paths() { # frontmatter `sources:` list `  - path: X` lines only,
 
 # Aggregation key for --modules. Two shapes share the `src/` marker and need
 # opposite treatment. Maven/Gradle's `src/main/java`, `src/test/java` and
-# `src/main/resources` are fixed boilerplate carrying no subsystem information
-# of their own -- the real module name lives entirely in the segment before
-# `src/`, so `lightweight/lightweight-impl/src/main/java/...` groups as
-# `lightweight/lightweight-impl`. A flat `<pkg>/src/<subsystem>/...` layout
-# (OCaml, Rust, Go, ...) has no such boilerplate: the segment right after
-# `src/` *is* the subsystem, so stripping there the same way would erase the
-# one distinction the grouping exists to preserve -- `eon_engine/src/render`
-# and `eon_engine/src/audio` would both collapse into one `eon_engine` bucket.
-# So: strip through the known boilerplate shapes outright; otherwise keep one
-# segment past `src/`. MUST match the rule /synapse-init uses for the
-# `## Sources` mirror -- two groupings for one concept is a divergence nobody
-# notices for months.
+# `src/main/resources` (configured in MODULE_BOILERPLATE, see
+# synapse-module-boilerplate.conf) are fixed boilerplate carrying no
+# subsystem information of their own -- the real module name lives entirely
+# in the segment before `src/`, so `lightweight/lightweight-impl/src/main/java/...`
+# groups as `lightweight/lightweight-impl`. A flat `<pkg>/src/<subsystem>/...`
+# layout (OCaml, Rust, Go, ...) has no such boilerplate: the segment right
+# after `src/` *is* the subsystem, so stripping there the same way would
+# erase the one distinction the grouping exists to preserve --
+# `eon_engine/src/render` and `eon_engine/src/audio` would both collapse into
+# one `eon_engine` bucket. So: strip through a configured boilerplate chain
+# outright; otherwise keep one segment past `src/`. MUST match the rule
+# /synapse-init uses for the `## Sources` mirror -- two groupings for one
+# concept is a divergence nobody notices for months.
 module_of() { # module_of <path>
-  local p="$1"
+  local p="$1" chain
+  for chain in "${MODULE_BOILERPLATE[@]:-}"; do
+    [ -n "$chain" ] || continue
+    case "$p" in
+      */"$chain"/*) printf '%s' "${p%%/"$chain"/*}"; return ;;
+    esac
+  done
   case "$p" in
-    */src/main/java/*|*/src/test/java/*|*/src/main/resources/*)
-      printf '%s' "${p%%/src/*}" ;;
     */src/*)
       local rest="${p#*/src/}"
       case "$rest" in

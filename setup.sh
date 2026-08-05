@@ -57,6 +57,14 @@ else
   echo "  installed from template -- machine-local, self-managed by /synapse-note: $DEST/synapse-projects.conf"
 fi
 
+echo "== synapse-module-boilerplate.conf =="
+if [ -f "$DEST/synapse-module-boilerplate.conf" ]; then
+  echo "  already exists, leaving in place: $DEST/synapse-module-boilerplate.conf"
+else
+  cp "$SRC/synapse-module-boilerplate.conf.template" "$DEST/synapse-module-boilerplate.conf"
+  echo "  installed from template -- edit to add your own ecosystem's src/ conventions: $DEST/synapse-module-boilerplate.conf"
+fi
+
 echo "== hooks/commands/skills =="
 cp "$SRC/hooks/"*.sh "$DEST/hooks/"
 chmod +x "$DEST/hooks/"*.sh

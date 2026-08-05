@@ -1,0 +1,24 @@
+# Copy this to ~/.claude/synapse-module-boilerplate.conf (setup.sh does this
+# for you). Never overwritten once installed -- add your own ecosystem's
+# conventions any time.
+#
+# Boilerplate path-segment chains that module_of() (synapse-query.sh,
+# synapse-write-node.sh's ## Sources mirror) strips through wholesale when
+# aggregating a node's sources into module buckets. These chains carry no
+# subsystem information of their own -- the real module name is the segment
+# before the chain, e.g. lightweight-impl/src/main/java/... groups as
+# lightweight-impl.
+#
+# Anything NOT listed here keeps one path segment past src/ instead of
+# collapsing it, because for most non-Java layouts (OCaml, Rust, Go, a flat
+# JS/TS src/<subsystem>/...) that next segment IS the subsystem, not
+# boilerplate -- collapsing it the same way would erase the one distinction
+# the grouping exists to preserve.
+#
+# Format: one chain per line, matched as a literal path substring
+# /<chain>/. No leading or trailing slash. Blank lines and #-comments
+# ignored.
+
+src/main/java
+src/test/java
+src/main/resources

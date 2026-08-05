@@ -82,6 +82,19 @@ done
 VAULT="${OBSIDIAN_VAULT_DIR:-}"
 [[ -n "$VAULT" && -d "$VAULT" ]] || { echo "synapse-write-node: no vault" >&2; exit 1; }
 
+# Boilerplate path-segment chains for the `## Sources` mirror below -- must
+# stay identical to synapse-query.sh's own MODULE_BOILERPLATE loading, or the
+# mirror and `sources --modules` disagree. See synapse-module-boilerplate.conf.
+MODULE_BOILERPLATE_CONF="$HOME/.claude/synapse-module-boilerplate.conf"
+MODULE_BOILERPLATE=()
+if [[ -f "$MODULE_BOILERPLATE_CONF" ]]; then
+  while IFS= read -r chain; do
+    chain="${chain%%#*}"
+    chain="$(printf '%s' "$chain" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -n "$chain" ]] && MODULE_BOILERPLATE+=("$chain")
+  done < "$MODULE_BOILERPLATE_CONF"
+fi
+
 command -v jq >/dev/null || { echo "synapse-write-node: jq required" >&2; exit 1; }
 command -v git >/dev/null || { echo "synapse-write-node: git required" >&2; exit 1; }
 
@@ -221,24 +234,34 @@ joined="$(paste -d: "$work/paths.txt" "$work/hashes.txt" | LC_ALL=C sort)"
 digest="$(printf '%s' "$joined" | sha256)"
 
 # --- `## Sources` mirror: module_of() identical to synapse-query.sh ----------
-# Maven/Gradle boilerplate (`src/main/java`, `src/test/java`, `src/main/resources`)
-# carries no subsystem information -- strip through it to the segment before
-# `src/`. A flat `<pkg>/src/<subsystem>/...` layout has no such boilerplate: the
-# segment right after `src/` is the subsystem, so keep one. Else the first path
-# component, else `(repo root)`. Two groupings for one concept is a divergence
-# nobody notices for months, so this must not drift from synapse-query.sh's
-# --modules.
-awk '{
-    if ($0 ~ /\/src\/main\/java\// || $0 ~ /\/src\/test\/java\// || $0 ~ /\/src\/main\/resources\//) {
-        if (match($0, /\/src\//)) { m = substr($0, 1, RSTART - 1) }
-    } else if (match($0, /\/src\//)) {
-        base = substr($0, 1, RSTART - 1)
-        rest = substr($0, RSTART + 5)
-        if (index(rest, "/")) { m = base "/src/" substr(rest, 1, index(rest, "/") - 1) }
-        else { m = base }
+# Configured boilerplate chains (MODULE_BOILERPLATE, see
+# synapse-module-boilerplate.conf) carry no subsystem information -- strip
+# through to the segment before `src/`. A flat `<pkg>/src/<subsystem>/...`
+# layout has no such boilerplate: the segment right after `src/` is the
+# subsystem, so keep one. Else the first path component, else `(repo root)`.
+# Two groupings for one concept is a divergence nobody notices for months, so
+# this must not drift from synapse-query.sh's --modules.
+boilerplate_joined="$(IFS='|'; printf '%s' "${MODULE_BOILERPLATE[*]:-}")"
+awk -v chains="$boilerplate_joined" '
+BEGIN { n = split(chains, C, "|") }
+{
+    m = ""
+    for (i = 1; i <= n; i++) {
+        if (C[i] == "") continue
+        pat = "/" C[i] "/"
+        p = index($0, pat)
+        if (p > 0) { m = substr($0, 1, p - 1); break }
     }
-    else if (index($0, "/")) { m = substr($0, 1, index($0, "/") - 1) }
-    else { m = "(repo root)" }
+    if (m == "") {
+        if (match($0, /\/src\//)) {
+            base = substr($0, 1, RSTART - 1)
+            rest = substr($0, RSTART + 5)
+            if (index(rest, "/")) { m = base "/src/" substr(rest, 1, index(rest, "/") - 1) }
+            else { m = base }
+        }
+        else if (index($0, "/")) { m = substr($0, 1, index($0, "/") - 1) }
+        else { m = "(repo root)" }
+    }
     count[m]++
 }
 END { for (m in count) printf "%s\t%d\n", m, count[m] }' "$work/paths.txt" \
