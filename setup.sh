@@ -65,6 +65,14 @@ else
   echo "  installed from template -- edit to add your own ecosystem's src/ conventions: $DEST/synapse-module-boilerplate.conf"
 fi
 
+echo "== synapse-prompt-stopwords.conf =="
+if [ -f "$DEST/synapse-prompt-stopwords.conf" ]; then
+  echo "  already exists, leaving in place: $DEST/synapse-prompt-stopwords.conf"
+else
+  cp "$SRC/synapse-prompt-stopwords.conf.template" "$DEST/synapse-prompt-stopwords.conf"
+  echo "  installed from template -- edit to add another language's stopwords: $DEST/synapse-prompt-stopwords.conf"
+fi
+
 echo "== hooks/commands/skills =="
 cp "$SRC/hooks/"*.sh "$DEST/hooks/"
 chmod +x "$DEST/hooks/"*.sh
@@ -143,8 +151,11 @@ jq '
   .hooks.SessionStart = (.hooks.SessionStart // []) |
   .hooks.PostToolUse = (.hooks.PostToolUse // []) |
   .hooks.Stop = (.hooks.Stop // []) |
+  .hooks.UserPromptSubmit = (.hooks.UserPromptSubmit // []) |
   (if any(.hooks.SessionStart[]?.hooks[]?; .command == "bash ~/.claude/hooks/synapse-session-start.sh")
    then . else .hooks.SessionStart += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/synapse-session-start.sh"}]}] end) |
+  (if any(.hooks.UserPromptSubmit[]?.hooks[]?; .command == "bash ~/.claude/hooks/synapse-prompt-context.sh")
+   then . else .hooks.UserPromptSubmit += [{"hooks":[{"type":"command","command":"bash ~/.claude/hooks/synapse-prompt-context.sh"}]}] end) |
   (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/synapse-db-sync.sh")
    then . else .hooks.PostToolUse += [{"matcher":"Write|Edit|mcp__obsidian__vault_(write|patch|append|delete|move)","hooks":[{"type":"command","command":"bash ~/.claude/hooks/synapse-db-sync.sh"}]}] end) |
   (if any(.hooks.PostToolUse[]?.hooks[]?; .command == "bash ~/.claude/hooks/synapse-staleness.sh")

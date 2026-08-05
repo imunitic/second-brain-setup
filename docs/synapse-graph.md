@@ -301,6 +301,18 @@ Cost is one `grep` fork regardless of namespace count (`-m1` stops inside each f
 
 Outside any git repo there is no pointer and nothing to exclude, so the catalogue lists everything. With no namespaces at all, nothing is emitted — the zero-cost path for repos that never opted in.
 
+## What every prompt is told
+
+`SessionStart` injects a pointer once. `UserPromptSubmit` (`synapse-prompt-context.sh`) goes further: on every single prompt, it extracts a handful of distinctive terms from the prompt text and surfaces whichever namespace nodes actually match, so a relevant node can be consulted without the model needing to think to search for it first. Set `SYNAPSE_DISABLE_PROMPT_INJECTION` (any value) to turn this off entirely — the check is the hook's literal first line, so a disabled run costs nothing beyond that one test.
+
+Term extraction (`synapse-tokenizer.sh`) is pure `grep`/`awk`, no LLM call: split the prompt on a configurable character class (`A-Za-z_`, extendable via `$SYNAPSE_TOKENIZER_EXTRA_CHARS` for languages like Lisp/Clojure/Scheme where `-` is part of an identifier), drop English stopwords (`~/.claude/synapse-prompt-stopwords.conf`, vendored from [stopwords-json](https://github.com/6/stopwords-json), extensible to other languages by one documented command), drop anything under 4 characters, keep the 8 longest survivors, and bracket-case the first letter of each (`Cached_backend` → `[Cc]ached_backend`) so the match is case-insensitive without relying on `(?i)` support. Stopword filtering is whole-line (`grep -x`), not word-boundary (`grep -w`) — `-w`'s boundary definition doesn't treat `-` as a word character, so a `-w` match against a hyphenated token can find a stopword embedded at the hyphen and wrongly drop the whole token.
+
+The terms are OR'd into one `regexp` clause, joined with a `glob` on the repo's own namespace path, and POSTed to the Local REST API's `/search/` endpoint as a single JsonLogic query — the same endpoint and shape `links`'s single-hop lookup uses, just with `regexp`/`glob` clauses instead of an `in`/`var` one. A match returns the node's path; the hook injects the list of matched paths as `additionalContext`, or nothing at all if nothing matched.
+
+This is deliberately coarse, and deliberately left that way: OR-ing every term means one domain-ubiquitous word (`component`, in an ECS codebase) can match most of a namespace on its own — confirmed during testing, where it alone matched 22 of ~32 nodes in one repo. Precision fixes (requiring several terms to co-occur, preferring identifier-shaped terms, a per-repo exclusion list) were considered and rejected: what's injected is a list of paths, already uncapped by design, so a broad match costs a couple dozen strings, not expensive content. Fix this only if real usage shows it's actually a problem, not preemptively.
+
+Whether this feature earns a permanent place is itself still an open, personal question — being decided from real usage data (a local, `~/.claude`-only log distinguishing prompts where injected context was used, where the `synapse-query` skill was used instead, and where neither happened), not from a fixed answer here.
+
 ## Two-tier staleness
 
 ![The two staleness tiers and the tree-sitter acceleration layer](diagrams/synapse-graph-tiers.png)

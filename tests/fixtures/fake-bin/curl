@@ -113,8 +113,38 @@ case "$method" in
     # the script's handling of it.
     case "$url" in
       */search/*)
-        field="$(printf '%s' "$data" | sed -n 's/.*"frontmatter\.\([A-Za-z_][A-Za-z0-9_]*\)".*/\1/p')"
         emit() { if [ -n "$outfile" ]; then cat > "$outfile"; else cat; fi; }
+        # Per-prompt context injection's shape: {"and": [{"glob": [pat, {"var":"path"}]},
+        # {"regexp": [re, {"var":"content"}]}]} -- distinguished from the
+        # frontmatter-field shape below by the presence of "glob", which that shape
+        # never contains. Handled separately rather than folded into the Python
+        # block below: different match semantics entirely (path glob + whole-file
+        # regexp vs. a single frontmatter field), so sharing one implementation
+        # would just obscure which shape is being tested.
+        case "$data" in
+          *'"glob"'*)
+            [ -n "${FAKE_CURL_VAULT_DIR:-}" ] || { echo '[]' | emit; exit 0; }
+            FAKE_CURL_SEARCH_QUERY="$data" ROOT="$FAKE_CURL_VAULT_DIR" python3 - <<'PYEOF' | emit
+import json, os, pathlib, re, fnmatch
+root = pathlib.Path(os.environ["ROOT"])
+q = json.loads(os.environ["FAKE_CURL_SEARCH_QUERY"])
+clauses = q["and"]
+glob_pat = next(c["glob"][0] for c in clauses if "glob" in c)
+regexp_pat = next(c["regexp"][0] for c in clauses if "regexp" in c)
+rx = re.compile(regexp_pat)
+out = []
+for f in sorted(root.rglob("*.md")):
+    rel = str(f.relative_to(root))
+    if not fnmatch.fnmatch(rel, glob_pat): continue
+    content = f.read_text(errors="replace")
+    if rx.search(content):
+        out.append({"filename": rel, "result": True})
+print(json.dumps(out))
+PYEOF
+            exit 0
+            ;;
+        esac
+        field="$(printf '%s' "$data" | sed -n 's/.*"frontmatter\.\([A-Za-z_][A-Za-z0-9_]*\)".*/\1/p')"
         [ -n "${FAKE_CURL_VAULT_DIR:-}" ] && [ -n "$field" ] || { echo '[]' | emit; exit 0; }
         FIELD="$field" ROOT="$FAKE_CURL_VAULT_DIR" python3 - <<'PYEOF' | emit
 import json, os, pathlib, re

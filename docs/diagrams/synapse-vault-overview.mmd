@@ -17,6 +17,7 @@ flowchart TB
     WORK["<b>Claude Code session</b><br/>reading, editing, deciding"]
     H2["<b>Stop hook</b><br/>synapse-stop-nudge.sh<br/>every 25 turns: did anything here<br/>belong in the Vault?"]
     H3["<b>PostToolUse hook</b><br/>synapse-db-sync.sh<br/>fires on any vault-modifying MCP call"]
+    H4["<b>UserPromptSubmit hook</b><br/>synapse-prompt-context.sh<br/>every prompt: extract terms,<br/>surface matching Graph nodes<br/>(SYNAPSE_DISABLE_PROMPT_INJECTION to skip)"]
 
     IDX["Index.md<br/>the folder map, agent-maintained"]
     FOLDERS["projects/ · research/ · scratchpad/<br/>inbox/ · designs/"]
@@ -28,11 +29,14 @@ flowchart TB
     H1 --> WORK
     WORK -->|"every 25 turns"| H2
     H2 -->|"nudge"| WORK
+    WORK -->|"every prompt"| H4
+    SYN -->|"read"| H4
+    H4 -->|"matching nodes"| WORK
     WORK -->|"MCP write"| FOLDERS
     FOLDERS --> H3
     H3 -->|"commit"| GIT
 
-    class H1,H2,H3 hook
+    class H1,H2,H3,H4 hook
     class IDX,FOLDERS,SYN vault
     class BEGIN,WORK session
     class GIT store
