@@ -29,6 +29,10 @@ Diagrams live in [diagrams/](diagrams/). Each one is a Mermaid source file (`.mm
 `.png`, and the docs embed the PNG rather than a ```mermaid fence — a fence renders on GitHub but shows
 up as raw source in Markview and other plain Markdown viewers, while a linked image works everywhere.
 
+- `diagrams/synapse-overview.png` — the whole system in one picture: three equally-weighted pillars
+  (permanent memory, the design→task workflow, the code graph) sharing one Obsidian Vault underneath.
+  See "What a session actually gets" below for what this view is for and how it differs from the
+  component breakdown above it.
 - `diagrams/synapse-vault-overview.png` — the Vault and its hooks.
 - `diagrams/synapse-graph-tiers.png` — the Graph's two staleness tiers and the tree-sitter layer.
 - `diagrams/design-task-workflow.png` — the design-note → task-note pipeline.
@@ -72,3 +76,25 @@ The Vault and the Graph do not require each other. A project can use the Vault w
 care whether the repo it is initialized in has any notes at all. The Tools are what make either usable
 from inside a session, which is why the constraint that shapes them — a node's exhaustive `sources` can
 neither be read into a context window nor emitted from one — ends up dictating so much of the design.
+
+## What a session actually gets
+
+The breakdown above describes what the three components *are* — a store, an accelerant layered on it,
+and the scripts that build both. This is the complementary view: what a Claude Code session actually
+*gets* out of using Synapse at all, as three capabilities rather than three components.
+
+![Three equally-weighted pillars -- permanent memory, the design-to-task workflow, and the code graph -- sharing one Obsidian Vault underneath](diagrams/synapse-overview.png)
+
+- **Permanent memory** — notes that survive past the session that wrote them, surfaced automatically
+  (`SessionStart`, the `Stop` nudge) rather than left to be remembered unprompted.
+- **A design → task workflow** — free-form discussion that only becomes a tracked checklist once it's
+  actually ready to build, with status tracked separately from the discussion that produced it.
+- **A code graph** — efficient codebase search and, since sb-005, exact per-symbol lookup, both scoped
+  to stay cheap regardless of a node's size.
+
+The three pillar boxes are drawn the same size on purpose. The code graph is the most mechanically
+elaborate of the three by a wide margin — two staleness tiers, tree-sitter acceleration, a tags cache
+with parallelized backfill — but conceptually it is one benefit among three, not the main event with
+two footnotes attached. A diagram sized to match that mechanical complexity would say something about
+Synapse's implementation effort that isn't true of its actual value split, which is the reason this
+view exists as its own diagram rather than being folded into `synapse-pipeline.png` above.

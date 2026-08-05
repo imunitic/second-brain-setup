@@ -1,0 +1,76 @@
+---
+title: Synapse — three pillars, one vault
+---
+%% A capability-level map, not an architecture diagram -- docs/README.md's "three
+%% components" (Vault / Graph / Tools) describes what things ARE; this describes
+%% what a session actually GETS. The three pillar boxes are deliberately drawn the
+%% same size: the Graph is mechanically the most complex (two staleness tiers, a
+%% tags cache, tree-sitter), but conceptually it is one of three, not the main
+%% event -- sizing them equally is the point, not an oversight. (Subgraph titles
+%% stay one line on purpose -- a <br/> in a subgraph label, unlike a node label,
+%% collides with the first node instead of wrapping.)
+flowchart TB
+    classDef session fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
+    classDef memory fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+    classDef workflow fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
+    classDef codegraph fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
+    classDef vault fill:#fff9db,stroke:#f08c00,color:#1e1e1e
+
+    SESSION["Claude Code session<br/>(any repo, any moment)"]
+
+    subgraph MEM["Permanent memory"]
+        direction TB
+        M1["SessionStart hook<br/>injects Index.md + this repo's<br/>Graph pointer + other namespaces"]
+        M2["Stop hook, every 25 turns:<br/>did anything belong in the Vault?"]
+        M3["plain notes -- human and Claude,<br/>outlive any one session"]
+        M1 -.-> M3
+        M2 -.-> M3
+    end
+
+    subgraph WORK["Design → task workflow"]
+        direction TB
+        W1["/synapse-design-note<br/>free-form discussion,<br/>Status: Discussing → Ready"]
+        W2["/synapse-task-note<br/>compiles Ready into one<br/>checklist, one task_id"]
+        W3["synapse-task skill<br/>TODO → IN-PROGRESS → REVIEW<br/>(never DONE on its own)"]
+        W4["gh issue mirror<br/>optional, on request"]
+        W1 --> W2 --> W3 -.-> W4
+    end
+
+    subgraph GRAPH["Code graph"]
+        direction TB
+        G1["/synapse-init<br/>cluster + write nodes"]
+        G2["two-tier staleness<br/>+ lazy regeneration"]
+        G3["synapse-query.sh<br/>body · sources · links · symbol"]
+        G1 --> G2 --> G3
+    end
+
+    subgraph VAULT["Obsidian Vault -- one store underneath all three"]
+        direction LR
+        VDESIGNS["designs/"]
+        VPROJECTS["projects/<br/>dev-log notes AND<br/>compiled task notes -- shared"]
+        VRESEARCH["research/ · scratchpad/ · inbox/"]
+        VSYNAPSE["synapse/{repo}/<br/>nodes + _index.json + _tags_cache.json"]
+        VDESIGNS ~~~ VPROJECTS ~~~ VRESEARCH ~~~ VSYNAPSE
+    end
+
+    SESSION --> MEM
+    SESSION --> WORK
+    SESSION --> GRAPH
+
+    %% One edge per pillar into the shared store, not a per-node fan-out --
+    %% the point is "all three write here", not which exact folder each uses
+    %% (that detail is one glance away inside the Vault box itself).
+    MEM -.->|"notes"| VAULT
+    WORK -.->|"design + task notes"| VAULT
+    GRAPH -.->|"nodes + caches"| VAULT
+
+    class SESSION session
+    class M1,M2,M3 memory
+    class W1,W2,W3,W4 workflow
+    class G1,G2,G3 codegraph
+    class VDESIGNS,VPROJECTS,VRESEARCH,VSYNAPSE vault
+
+    style MEM fill:#ffffff,stroke:#2f9e44,stroke-dasharray:2 2
+    style WORK fill:#ffffff,stroke:#6741d9,stroke-dasharray:2 2
+    style GRAPH fill:#ffffff,stroke:#e8590c,stroke-dasharray:2 2
+    style VAULT fill:#fffaf0,stroke:#f08c00,stroke-dasharray:4 4
