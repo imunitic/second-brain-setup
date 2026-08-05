@@ -19,6 +19,21 @@ setup() {
   setup_fake_obsidian_plugin
   CURL_LOG="$TEST_HOME/curl.log"
   : > "$CURL_LOG"
+  # For `symbol`: real tree-sitter is stubbed by fake-bin/tree-sitter (always
+  # emits one deterministic FAKE_NAME tag line); synapse-tags-cache.sh and
+  # synapse-tags.sh are installed like a real setup.sh would, since `symbol`
+  # shells out to the *installed* copies, not the repo ones.
+  GRAMMARS_DIR="$TEST_HOME/grammars"
+  FAKE_TS_LOG="$TEST_HOME/ts.log"
+  FAKE_GIT_LOG="$TEST_HOME/git.log"
+  : > "$FAKE_TS_LOG"
+  : > "$FAKE_GIT_LOG"
+  printf '{"ml": {"repo": "https://example.invalid/tree-sitter-ocaml", "scope": "source.ocaml"}}' \
+    > "$HOME/.claude/synapse-grammars.conf"
+  mkdir -p "$HOME/.claude/bin"
+  cp "$REPO_ROOT/claude/bin/synapse-tags.sh" "$HOME/.claude/bin/synapse-tags.sh"
+  cp "$REPO_ROOT/claude/bin/synapse-tags-cache.sh" "$HOME/.claude/bin/synapse-tags-cache.sh"
+  chmod +x "$HOME/.claude/bin/synapse-tags.sh" "$HOME/.claude/bin/synapse-tags-cache.sh"
 }
 
 teardown() {
@@ -30,6 +45,9 @@ run_query() {
   PATH="$FAKE_BIN:$PATH" \
     FAKE_CURL_LOG="$CURL_LOG" \
     FAKE_CURL_VAULT_DIR="$VAULT" \
+    SYNAPSE_GRAMMARS_DIR="$GRAMMARS_DIR" \
+    FAKE_TS_LOG="$FAKE_TS_LOG" \
+    FAKE_GIT_LOG="$FAKE_GIT_LOG" \
     bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$QUERY" "$@"
 }
 
@@ -460,4 +478,109 @@ write_fenced_node() {
   run run_query body "Foo Node"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Prose that should be printed."* ]]
+}
+
+# --- symbol: exact-name def/ref lookup, backed by the tags cache -----------
+# Real tree-sitter is stubbed (fake-bin/tree-sitter always emits one
+# deterministic `FAKE_NAME` tag line), so these tests exercise `symbol`'s own
+# control flow -- cache backfill, exact-name filtering, disable knob, and the
+# distinct "not checked" reporting -- not tree-sitter's actual output.
+
+@test "symbol: exact match across a node's sources, with file and tag line" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  run run_query symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"src/foo.ml"* ]]
+  [[ "$output" == *"FAKE_NAME"* ]]
+}
+
+@test "symbol: a name that never appears is silent, exit 0" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  run run_query symbol this_name_does_not_exist "Foo Node"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "symbol: second query against the same node re-tags nothing" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  run run_query symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  : > "$FAKE_TS_LOG"
+
+  run run_query symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "symbol: disabled via env var -- no output, no tagging at all" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  run env SYNAPSE_DISABLE_SYMBOL_CACHE=1 \
+    PATH="$FAKE_BIN:$PATH" FAKE_CURL_LOG="$CURL_LOG" FAKE_CURL_VAULT_DIR="$VAULT" \
+    SYNAPSE_GRAMMARS_DIR="$GRAMMARS_DIR" FAKE_TS_LOG="$FAKE_TS_LOG" FAKE_GIT_LOG="$FAKE_GIT_LOG" \
+    bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$QUERY" symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "symbol: missing arguments is a usage error, exit 2" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml"
+
+  run run_query symbol FAKE_NAME
+  [ "$status" -eq 2 ]
+}
+
+@test "symbol: unknown node exits 1" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+
+  run run_query symbol FAKE_NAME "No Such Node"
+  [ "$status" -eq 1 ]
+}
+
+@test "symbol: unsupported file is reported distinctly, never conflated with no-match" {
+  make_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  # No registry entry for this extension at all -- synapse-tags.sh exits 2
+  # (needs discovery), which the cache records as unsupported.
+  printf 'no grammar for this\n' > "$REPO/src/foo.unknownext"
+  git -C "$REPO" add src/foo.unknownext
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m "add unsupported file"
+  write_fenced_node "Foo Node.md" "src/foo.unknownext"
+
+  run run_query symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  # bats merges stderr into $output by default, so the "not checked" note
+  # (stderr) is what's here -- no tab-separated hit line (stdout) at all,
+  # since the file was never actually tagged.
+  [[ "$output" == *"unsupported"* ]]
+  [[ "$output" != *$'\t'"FAKE_NAME"* ]]
+}
+
+@test "symbol: a node with several sources returns hits from every one that matches" {
+  make_repo
+  printf 'let y = 2\n' > "$REPO/src/bar.ml"
+  git -C "$REPO" add src/bar.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m "add bar.ml"
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_fenced_node "Foo Node.md" "src/foo.ml" "src/bar.ml"
+
+  run run_query symbol FAKE_NAME "Foo Node"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"src/foo.ml"* ]]
+  [[ "$output" == *"src/bar.ml"* ]]
 }

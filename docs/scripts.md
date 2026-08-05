@@ -123,8 +123,17 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
   links   <node> --inbound           what points here, as relation<TAB>source
   links   <node> --closure           every node reachable outbound, depth<TAB>node
   links   --check                    link targets that resolve to no node
+  symbol  <name> <node>              exact-name def/ref hits across the node's
+                                     sources, as path<TAB>tag-line (see below)
 
 <node> may be given with or without the trailing `.md`.
+
+`symbol` is a name-based, not type-resolved, lookup backed by a per-project
+tags cache (synapse/{project}/_tags_cache.json) kept current as a byproduct
+of node build/regeneration, with any file the cache is missing tagged
+lazily on the spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable
+entirely -- see designs/sb -- Deterministic per-symbol call graph
+(wiring.json-equivalent).md for the full design.
 
 `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
@@ -138,6 +147,39 @@ Exit codes:
   1 - could not run (missing dependency, no vault, no namespace, remote
       mismatch, unknown node). Treat as "no information", never as "clean".
   2 - usage error (unknown subcommand, bad flag, unsupported field)
+```
+
+## `synapse-tags-cache.sh`
+
+Keeps a project's synapse-tags.sh output cache current for a given set of
+files, re-tagging only what changed and doing so in parallel when several
+files need it. Shared by node build/regeneration (piggybacked on the same
+per-file hash comparison it already performs) and synapse-query.sh's
+`symbol` subcommand (lazy backfill on a cache miss). See
+designs/sb -- Deterministic per-symbol call graph (wiring.json-equivalent).md
+for the full design and the measured cost of a cold, fully-uncached run.
+
+```
+Usage: synapse-tags-cache.sh --repo-root <path> --cache <_tags_cache.json path> --paths <file>
+  --paths  file of repo-relative path<TAB>current-git-hash lines, one per
+           file the caller wants current in the cache (a node's `sources`,
+           typically -- the caller already has both path and hash).
+
+  Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4).
+  Every worker tags one file and writes its own result to a private temp
+  file; a single sequential step afterward merges those into the cache in
+  one pass. No worker ever writes the shared cache file directly.
+
+  A file synapse-tags.sh can't check (no grammar, no tree-sitter, no C
+  compiler -- its own exit 1/2) is still recorded, as `unsupported: true`
+  with empty tags, so it isn't silently re-attempted on every call. That is
+  a distinct outcome from "checked, symbol not present" -- callers must
+  report it as such, never as a plain non-match.
+
+Exit codes:
+  0 - cache is current for every requested path (already-current paths need
+      no work; this is also the outcome when nothing needed tagging at all)
+  1 - usage error, missing dependency, or the cache could not be read/written
 ```
 
 ## `synapse-tags.sh`

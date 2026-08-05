@@ -18,8 +18,17 @@
 #   links   <node> --inbound           what points here, as relation<TAB>source
 #   links   <node> --closure           every node reachable outbound, depth<TAB>node
 #   links   --check                    link targets that resolve to no node
+#   symbol  <name> <node>              exact-name def/ref hits across the node's
+#                                      sources, as path<TAB>tag-line (see below)
 #
 # <node> may be given with or without the trailing `.md`.
+#
+# `symbol` is a name-based, not type-resolved, lookup backed by a per-project
+# tags cache (synapse/{project}/_tags_cache.json) kept current as a byproduct
+# of node build/regeneration, with any file the cache is missing tagged
+# lazily on the spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable
+# entirely -- see designs/sb -- Deterministic per-symbol call graph
+# (wiring.json-equivalent).md for the full design.
 #
 # `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 # HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
@@ -50,7 +59,7 @@ shift
 # run" (exit 1) for a typo'd subcommand just because Obsidian happens to be
 # down would send the caller looking in the wrong place entirely.
 case "$SUB" in
-  body|sources|field|stale|drift|grounding|links) ;;
+  body|sources|field|stale|drift|grounding|links|symbol) ;;
   -h|--help) usage 0 ;;
   *) usage ;;
 esac
@@ -742,6 +751,64 @@ cmd_grounding() {
 }
 
 
+# --- symbol: exact-name def/ref lookup, backed by a per-project tags cache --
+# Query time is a cache read with lazy backfill on a miss, never a fresh
+# tree-sitter pass over the whole node -- see the design note in the header
+# comment. The cache itself is kept current as a byproduct of node
+# build/regeneration (synapse-write-node.sh); this only backfills whatever
+# that hasn't reached yet for this node's current sources.
+cmd_symbol() {
+  # Literal first line of this subcommand's logic: a disabled run does no
+  # cache I/O and no tagging at all, matching the per-prompt injection hook's
+  # own disable-knob convention.
+  [ -z "${SYNAPSE_DISABLE_SYMBOL_CACHE:-}" ] || return 0
+
+  local name="${1:-}" node="${2:-}"
+  [ -n "$name" ] && [ -n "$node" ] || usage
+  [ $# -eq 2 ] || usage
+
+  fetch_node "$node" >/dev/null || exit 1
+  extract_source_paths "$NODE_FILE" > "$WORK/symbol-paths.txt"
+  [ -s "$WORK/symbol-paths.txt" ] || return 0
+
+  (cd "$REPO_ROOT" && git hash-object --stdin-paths < "$WORK/symbol-paths.txt") \
+    > "$WORK/symbol-hashes.txt" 2>/dev/null \
+    || { echo "synapse-query: could not hash '$node' sources" >&2; exit 1; }
+  paste "$WORK/symbol-paths.txt" "$WORK/symbol-hashes.txt" > "$WORK/symbol-paths-hashes.tsv"
+
+  CACHE_FILE="$VAULT/synapse/$REPO_NAME/_tags_cache.json"
+  TAGS_CACHE_SH="$HOME/.claude/bin/synapse-tags-cache.sh"
+  if [ -x "$TAGS_CACHE_SH" ]; then
+    "$TAGS_CACHE_SH" --repo-root "$REPO_ROOT" --cache "$CACHE_FILE" \
+      --paths "$WORK/symbol-paths-hashes.tsv" \
+      || echo "synapse-query: symbol cache backfill failed for '$node' -- continuing with what's already cached" >&2
+  fi
+
+  if [ ! -f "$CACHE_FILE" ]; then
+    echo "synapse-query: no tags cache for this project yet -- nothing checked" >&2
+    return 0
+  fi
+
+  # For each source path: a cache miss or an unsupported file is reported
+  # distinctly (stderr) -- never conflated with "checked, symbol not present",
+  # which stays silent on stdout like every other reporting subcommand here.
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    entry="$(jq -c --arg p "$path" '.[$p] // empty' "$CACHE_FILE")"
+    if [ -z "$entry" ]; then
+      echo "synapse-query: $path not checked (no cache entry)" >&2
+      continue
+    fi
+    if [ "$(printf '%s' "$entry" | jq -r '.unsupported')" = "true" ]; then
+      echo "synapse-query: $path not checked (unsupported: no grammar, tree-sitter, or C compiler)" >&2
+      continue
+    fi
+    printf '%s' "$entry" | jq -r '.tags' \
+      | awk -F'\t' -v n="$name" '{ nm=$1; gsub(/^[ \t]+|[ \t]+$/, "", nm); if (nm == n) print }' \
+      | while IFS= read -r line; do printf '%s\t%s\n' "$path" "$line"; done
+  done < "$WORK/symbol-paths.txt"
+}
+
 # $SUB was validated above, so this needs no catch-all.
 case "$SUB" in
   body)    cmd_body "$@" ;;
@@ -751,4 +818,5 @@ case "$SUB" in
   drift)   cmd_drift "$@" ;;
   grounding) cmd_grounding "$@" ;;
   links)   cmd_links "$@" ;;
+  symbol)  cmd_symbol "$@" ;;
 esac

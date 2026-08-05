@@ -227,6 +227,24 @@ hashes_n="$(wc -l < "$work/hashes.txt" | tr -d ' ')"
     exit 1
 }
 
+# --- keep the per-project tags cache current, as a byproduct ----------------
+# synapse-tags.sh already runs per source file elsewhere in the build pipeline
+# for clustering signal; this persists that work instead of discarding it, so
+# `synapse-query.sh symbol` is a pure cache read. Piggybacks on the hashes
+# just computed above rather than re-deriving its own staleness signal. Never
+# fatal: a failure here should not block writing the node itself. See
+# designs/sb -- Deterministic per-symbol call graph (wiring.json-equivalent).md
+if [[ -z "${SYNAPSE_DISABLE_SYMBOL_CACHE:-}" ]]; then
+    tags_cache_sh="$HOME/.claude/bin/synapse-tags-cache.sh"
+    if [[ -x "$tags_cache_sh" ]]; then
+        paste "$work/paths.txt" "$work/hashes.txt" > "$work/paths-hashes.tsv"
+        "$tags_cache_sh" --repo-root "$REPO_ROOT" \
+            --cache "$VAULT/synapse/$REPO_NAME/_tags_cache.json" \
+            --paths "$work/paths-hashes.tsv" \
+            || echo "synapse-write-node: tags cache refresh failed (non-fatal)" >&2
+    fi
+fi
+
 # --- sources_digest: sha256 over LC_ALL=C sorted "path:hash", no trailing NL --
 # Definition pinned in /synapse-init and re-implemented in synapse-query.sh's
 # `stale`; all three must agree or every node reports a false mismatch.

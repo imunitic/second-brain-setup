@@ -465,3 +465,40 @@ It's optional at every layer, never a hard dependency:
 
 One subtlety in reading the output: a qualified-path reference (`Eon_ecs.Foo.bar`) must not also be
 counted as a bare same-package reference to `bar`, or the tags imply edges the code does not contain.
+
+## Exact-symbol lookup: a tags cache, not a persisted call graph
+
+A node's answer is concept-level — "this subsystem does X" — never an exact per-symbol resolution,
+by design (see "Known limitation: no exact call graph" in the design note). `synapse-query.sh symbol
+<name> "{Node}"` closes the specific last-mile gap that leaves: once a node has already named the
+file(s) to look in, turning "grep within this known file" into an exact `file:line` hit for a given
+name. Set `SYNAPSE_DISABLE_SYMBOL_CACHE` (any value) to turn it off entirely.
+
+This is deliberately not a `wiring.json`-equivalent — no whole-repo persisted call graph, no new
+staleness tier. It's a per-project cache, `synapse/{project}/_tags_cache.json` (`path → {hash,
+tags}`), populated as a byproduct of work that already happens: `synapse-tags.sh` already runs over a
+node's `sources` at build/regeneration time for clustering signal, and this persists that output
+instead of discarding it. The cache's freshness rides entirely on the same per-file git-hash
+comparison a node regeneration already performs — a changed hash re-tags just that file; an unchanged
+one is skipped — so there's no separate invalidation logic to maintain, and the cache can never
+disagree with the node it belongs to.
+
+**Query time is a pure cache read.** `symbol` resolves the node's `sources`, looks up each path in the
+cache, and filters for an exact match on the requested name — no tree-sitter invocation at all when
+everything's already cached. A cache miss (a file the cache hasn't reached yet — e.g. `/synapse-init`
+sampled rather than tagging every file in a large repo) triggers a lazy backfill, parallelized via
+`xargs -P` (capped at the machine's core count) rather than one file at a time: each worker tags one
+file into its own temp result, and a single sequential step afterward merges every result into the
+cache in one pass — never multiple processes writing the shared cache file directly. Measured against
+this repo's own `.ml`/`.mli` files: 261 files serially took 22.66s, `xargs -P 8` took 4.89s (~4.6x);
+1044 invocations (simulating a cold, 1000+-file hub node) took 89.98s serially versus 19.44s
+parallelized. That backfill cost is paid once, the first time a query touches an under-cached node —
+every query after that, for that node or any file a regeneration has already re-tagged, is free.
+
+A file `synapse-tags.sh` can't check (no grammar, no tree-sitter, no C compiler) is recorded as
+`unsupported: true` rather than retried every call, and reported by `symbol` as "not checked" —
+distinct from "checked, name not present," which stays silent on stdout like every other reporting
+subcommand here. Matching is name-based, not type-resolved: two files both defining a symbol with the
+same short name both come back as separate hits, left for the caller to disambiguate by file, exactly
+the judgment already required without this feature — now backed by exact ranges instead of another
+grep.

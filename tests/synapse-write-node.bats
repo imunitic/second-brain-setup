@@ -25,6 +25,21 @@ setup() {
   BODY="$TEST_HOME/body.md"
   PATHS="$TEST_HOME/paths.txt"
   printf '## Summary\nA node.\n\n## Links\n- part_of [[Other]]\n' > "$BODY"
+  # For the tags-cache wiring: real tree-sitter is stubbed by
+  # fake-bin/tree-sitter (always emits one deterministic FAKE_NAME tag line).
+  # synapse-tags.sh and synapse-tags-cache.sh are installed like a real
+  # setup.sh would, since the writer shells out to the installed copies.
+  GRAMMARS_DIR="$TEST_HOME/grammars"
+  FAKE_TS_LOG="$TEST_HOME/ts.log"
+  FAKE_GIT_LOG="$TEST_HOME/git.log"
+  : > "$FAKE_TS_LOG"
+  : > "$FAKE_GIT_LOG"
+  printf '{"ml": {"repo": "https://example.invalid/tree-sitter-ocaml", "scope": "source.ocaml"}}' \
+    > "$HOME/.claude/synapse-grammars.conf"
+  mkdir -p "$HOME/.claude/bin"
+  cp "$REPO_ROOT/claude/bin/synapse-tags.sh" "$HOME/.claude/bin/synapse-tags.sh"
+  cp "$REPO_ROOT/claude/bin/synapse-tags-cache.sh" "$HOME/.claude/bin/synapse-tags-cache.sh"
+  chmod +x "$HOME/.claude/bin/synapse-tags.sh" "$HOME/.claude/bin/synapse-tags-cache.sh"
 }
 
 teardown() {
@@ -39,10 +54,15 @@ run_write() {
 }
 
 run_writer_raw() {
+  # SYNAPSE_DISABLE_SYMBOL_CACHE, if a test `export`ed it, is inherited by the
+  # `bash -c` child below automatically -- no need to re-list it here.
   PATH="$FAKE_BIN:$PATH" \
     FAKE_CURL_LOG="$CURL_LOG" \
     FAKE_CURL_VAULT_DIR="$VAULT" \
     FAKE_CURL_PUT_STATUS="${PUT_STATUS:-200}" \
+    SYNAPSE_GRAMMARS_DIR="$GRAMMARS_DIR" \
+    FAKE_TS_LOG="$FAKE_TS_LOG" \
+    FAKE_GIT_LOG="$FAKE_GIT_LOG" \
     bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$WRITER" "$@"
 }
 
@@ -734,4 +754,51 @@ slice_digest() { # slice_digest <path> <start> <end>
   grep -qxF '  - path: lib/calc.ml' "$f"
   grep -qxF 'let line05 = 5' "$f"      # crux sliced and rendered
   ! grep -qF 'Computes the premium' "$f"  # grounding not rendered
+}
+
+# --- tags cache: kept current as a byproduct of writing a node -------------
+
+@test "writing a node populates the tags cache for its sources" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+
+  cache="$VAULT/synapse/$(repo_name)/_tags_cache.json"
+  [ -f "$cache" ]
+  [[ "$(jq -r '."src/foo.ml".tags' "$cache")" == *"FAKE_NAME"* ]]
+  [ "$(jq -r '."src/foo.ml".unsupported' "$cache")" = "false" ]
+}
+
+@test "rewriting a node with an unchanged source re-tags nothing" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+  run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  : > "$FAKE_TS_LOG"
+
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "disabled via env var: node write still succeeds, no cache file created" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+
+  export SYNAPSE_DISABLE_SYMBOL_CACHE=1
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  [ ! -f "$VAULT/synapse/$(repo_name)/_tags_cache.json" ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "a missing synapse-tags-cache.sh does not block writing the node" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+  rm -f "$HOME/.claude/bin/synapse-tags-cache.sh"
+
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  [ -f "$(node_file "Widget core")" ]
 }
