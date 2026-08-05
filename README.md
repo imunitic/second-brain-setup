@@ -76,11 +76,13 @@ blocks.
   tracked file. `grounding` re-slices each recorded piece of evidence and distinguishes *moved* (fixable
   by re-pointing, no reading) from *changed* (a claim to re-check). `links` derives the typed relation
   graph a node's `## Links` section records — outbound, inbound, transitive closure, and `--check` for
-  targets that resolve to no node, which Obsidian renders silently. None of them ever pull. `body`
-  prints a node's fenced prose, `sources` its file list filtered/counted/grouped by module, `field`
-  one frontmatter scalar. A script rather than direct reads because a hub node's `sources` is ~38k
-  tokens and `_index.json` ~350k — everything a script reads internally is free, only its stdout
-  costs tokens.
+  targets that resolve to no node, which Obsidian renders silently. `symbol <name> "{Node}"` is exact-name
+  def/ref lookup across a node's sources — the last-mile step from "a node named the file" to a real
+  `file:line`, backed by `synapse-tags-cache.sh` below rather than a fresh tree-sitter pass per query.
+  None of them ever pull. `body` prints a node's fenced prose, `sources` its file list
+  filtered/counted/grouped by module, `field` one frontmatter scalar. A script rather than direct reads
+  because a hub node's `sources` is ~38k tokens and `_index.json` ~350k — everything a script reads
+  internally is free, only its stdout costs tokens.
 - `claude/bin/synapse-build-lists.sh` — enumerates tracked files (dropping binaries, lockfiles,
   minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
   printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
@@ -105,6 +107,14 @@ blocks.
   `tree-sitter tags` output (definitions plus name-based call references). Fails soft on any missing
   piece (`tree-sitter`, a C compiler, an unsupported language) — every caller falls back to reading the
   file directly, exactly as if this script did not exist.
+- `claude/bin/synapse-tags-cache.sh` — keeps `synapse/{project}/_tags_cache.json` (`path → {hash,
+  tags}`) current for a set of files, piggybacked on the same per-file hash comparison node
+  regeneration already performs rather than a separate staleness pass: unchanged paths are skipped,
+  changed-or-missing ones are (re-)tagged in parallel via `xargs -P` (capped at the machine's core
+  count), each worker writing its own result to a private temp file before one sequential merge writes
+  the cache — never a worker writing the shared file directly. `synapse-write-node.sh` calls this as a
+  byproduct of its own hashing; `synapse-query.sh symbol` calls it to lazily backfill whatever a node's
+  cache hasn't reached yet. Disable entirely with `SYNAPSE_DISABLE_SYMBOL_CACHE`.
 
 ## What's NOT portable (per-machine, regenerated fresh each time)
 
@@ -170,10 +180,12 @@ catalogue — pure git and filesystem, no network), `synapse-staleness.sh` (Tier
 correction nudge, with `tests/fixtures/fake-bin/curl` stubbing out the Obsidian Local REST API so no
 real Vault or plugin is needed), `synapse-tags.sh` (registry lookup, exit-code contract, and
 clone/registration idempotency, with `tests/fixtures/fake-bin/{tree-sitter,git}` stubbing out the real
-CLI and grammar cloning so no network access or tree-sitter install is needed), and the five
-node-building scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which
-runs the whole four-step build against a throwaway repo and reads the result back through
-`synapse-query.sh`.
+CLI and grammar cloning so no network access or tree-sitter install is needed), `synapse-tags-cache.sh`
+and `synapse-query.sh symbol` (cold tagging, no-op on an unchanged re-run, single-file re-tag on a hash
+change, unsupported-file caching so it's never silently retried, and the writer-side wiring that
+populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), and the five node-building
+scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
+four-step build against a throwaway repo and reads the result back through `synapse-query.sh`.
 
 `sources_digest` is recomputed independently in Python rather than by reusing a script's own formula,
 so a drift between the writer and the verifier fails a test instead of silently agreeing with itself.

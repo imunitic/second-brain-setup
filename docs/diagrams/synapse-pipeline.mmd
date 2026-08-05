@@ -40,15 +40,18 @@ flowchart TB
         JSON["_index.json<br/>source path → owning nodes"]
         INDEX["Index.md<br/>node map + remote"]
         AUX["_manifest.tsv · _profile.txt<br/>kept for the next rebuild"]
+        TAGSCACHE["_tags_cache.json<br/>path → {hash, tags, unsupported}<br/>machine-only, never authoritative"]
     end
 
     WRITE ==>|"PUT over the local REST API"| NODE
     IDX ==> JSON
     PIDX ==> INDEX
+    WRITE -.->|"byproduct: refreshes<br/>via synapse-tags-cache.sh<br/>(best-effort, non-fatal)"| TAGSCACHE
 
     subgraph USE["READ · DETECT · REPAIR"]
         direction TB
         QUERY["synapse-query.sh<br/>body · sources · field<br/>reads the expensive parts internally,<br/>prints only the projection asked for"]
+        SYMBOL["synapse-query.sh symbol<br/>exact-name def/ref lookup —<br/>cache read, lazy xargs -P backfill<br/>on a miss (synapse-tags-cache.sh)"]
         NODESKILL["synapse-node skill<br/>Tier 2: verify, then regenerate lazily"]
         STALE1["synapse-staleness.sh<br/>Tier 1 hook: stale: true,<br/>+ correction nudge when cited<br/>evidence stops matching"]
         STALE2["synapse-query.sh stale<br/>re-hashes what a node claims —<br/>but a rename reads as gone"]
@@ -66,12 +69,15 @@ flowchart TB
     NODE -.-> STALE2
     NODE -.-> DRIFT
     NODE -.-> GROUND
+    NODE -.->|"sources"| SYMBOL
+    TAGSCACHE -.->|"read"| SYMBOL
+    SYMBOL -.->|"backfill on miss"| TAGSCACHE
     REBUILD ==>|"re-writes each node,<br/>re-recording its commit"| WRITE
 
     class ORIENT,PROSE model
     class MANIFEST seam
-    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,STALE2,DRIFT,GROUND script
-    class NODE,JSON,INDEX,AUX vault
+    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,SYMBOL,STALE2,DRIFT,GROUND script
+    class NODE,JSON,INDEX,AUX,TAGSCACHE vault
     class STALE1 hook
     class REBUILD,NODESKILL cmd
 
