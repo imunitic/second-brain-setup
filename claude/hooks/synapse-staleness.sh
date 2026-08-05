@@ -264,24 +264,91 @@ while IFS= read -r node; do
   rm -f "$ORIG" "$NEXT"
 done <<< "$NODES"
 
-# Nothing to say unless cited evidence actually stopped matching. Silence is the
-# common case by design -- an edit to a file a node merely covers gets flagged
-# stale and produces no output at all.
-[ -s "$FINDINGS" ] || exit 0
+# --- blast radius (opportunistic, once per session per file) --------------
+# NODES already lists which nodes directly cover this file. That's ownership,
+# not impact -- the actual "what might this edit affect" signal is who
+# DEPENDS ON those nodes, i.e. their inbound typed-relation edges
+# (depends_on/part_of/uses/etc). Computed the same way synapse-query.sh's
+# `links --inbound` does: one awk pass over every node file in the namespace,
+# no per-file forks -- cheap even on a hub node (~0.04s at 4.5 MB, per that
+# script's own measurement).
+#
+# Fires at most once per (session, file): editing the same file repeatedly in
+# one session would otherwise repeat the same information on every edit,
+# exactly the "fires constantly, gets tuned out" failure mode the citation
+# nudge above was designed to avoid. A fresh session re-learns it once, same
+# as a human re-reading a map after a while away. Session id comes from the
+# hook's own stdin payload, same field synapse-stop-nudge.sh already reads.
+SID="$(printf '%s' "$INPUT" | jq -r '.session_id // "default"')"
+STATE_DIR="$HOME/.claude/state"
+mkdir -p "$STATE_DIR"
+SEEN_FILE="$STATE_DIR/synapse-blast-radius-seen-$SID"
+SEEN_KEY="$REPO_NAME/$REL"
+
+BLAST_TEXT=""
+if ! grep -qxF "$SEEN_KEY" "$SEEN_FILE" 2>/dev/null; then
+  TARGETS="$(printf '%s\n' "$NODES" | sed 's/\.md$//')"
+  DEPENDENTS="$(awk -v targets="$TARGETS" '
+    BEGIN {
+      n = split(targets, arr, "\n")
+      for (i = 1; i <= n; i++) want[arr[i]] = 1
+    }
+    FNR == 1 {
+      inl = 0
+      src = FILENAME
+      sub(/.*\//, "", src); sub(/\.md$/, "", src)
+      skip = (src == "Index")
+    }
+    skip { next }
+    /^## Links$/ { inl = 1; next }
+    inl && /^## / { inl = 0; next }
+    inl && /^-[[:space:]]*[^[:space:]]+[[:space:]]*\[\[[^]]+\]\]/ {
+      tgt = $0; sub(/^[^[]*\[\[/, "", tgt); sub(/\]\].*$/, "", tgt)
+      if (tgt in want && src != tgt) print src
+    }' "$VAULT/synapse/$REPO_NAME"/*.md 2>/dev/null | LC_ALL=C sort -u || true)"
+
+  if [ -n "$DEPENDENTS" ]; then
+    printf '%s\n' "$SEEN_KEY" >> "$SEEN_FILE"
+    COUNT="$(printf '%s\n' "$DEPENDENTS" | wc -l | tr -d ' ')"
+    LIST="$(printf '%s\n' "$DEPENDENTS" | head -5 | sed 's/^/  - /')"
+    EXTRA=$(( COUNT - 5 ))
+    [ "$EXTRA" -gt 0 ] && LIST="$LIST"$'\n'"  (+$EXTRA more)"
+    BLAST_TEXT="This file is covered by a Synapse node that other nodes depend on:
+$LIST
+
+Not necessarily a reason to change anything else — just worth knowing before you finish, in case this edit changes behavior those nodes describe."
+  fi
+fi
+
+# --- combine and emit -------------------------------------------------------
+# Nothing to say unless either check found something. Silence is the common
+# case by design -- an edit to a file a node merely covers, with no
+# dependents and no broken citation, produces no output at all.
+CORRECTION_TEXT=""
+if [ -s "$FINDINGS" ]; then
+  LIST="$(awk -F'\t' '{ print "  - " $1 " — " $2 }' "$FINDINGS")"
+  CORRECTION_TEXT="You just edited a file that these Synapse nodes cite as evidence, and the cited range no longer matches what was recorded:
+$LIST
+
+You have the code in front of you right now, so checking is nearly free — this is the one moment correcting a node costs nothing extra. If a sentence in the node is now wrong, fix that sentence and re-point the evidence, following the synapse-node skill: recover the prose with \`synapse-query.sh body\`, re-emit the crux and grounded_in directives, and write it back with synapse-write-node.sh.
+
+Keep it incidental. Correct only what this edit actually contradicts. Do NOT re-read the node's other sources, do not verify its remaining claims, and do not start a sweep — that is /synapse-rebuild's job, and turning this into one is how a cheap habit becomes an expensive one. If the prose still holds despite the range moving, just re-point it and move on."
+fi
+
+[ -n "$CORRECTION_TEXT" ] || [ -n "$BLAST_TEXT" ] || exit 0
+
+if [ -n "$CORRECTION_TEXT" ] && [ -n "$BLAST_TEXT" ]; then
+  COMBINED="$CORRECTION_TEXT"$'\n\n---\n\n'"$BLAST_TEXT"
+else
+  COMBINED="$CORRECTION_TEXT$BLAST_TEXT"
+fi
 
 # `additionalContext` rather than `decision: block`: this is information for the
 # next turn, not a reason to stop. Same shape as synapse-stop-nudge.sh.
-jq -Rn --rawfile findings "$FINDINGS" '
-  ($findings | rtrimstr("\n") | split("\n")
-    | map(split("\t") | "  - " + .[0] + " — " + .[1]) | join("\n")) as $list
-  | {
-      hookSpecificOutput: {
-        hookEventName: "PostToolUse",
-        additionalContext: (
-          "You just edited a file that these Synapse nodes cite as evidence, and the cited range no longer matches what was recorded:\n"
-          + $list
-          + "\n\nYou have the code in front of you right now, so checking is nearly free — this is the one moment correcting a node costs nothing extra. If a sentence in the node is now wrong, fix that sentence and re-point the evidence, following the synapse-node skill: recover the prose with `synapse-query.sh body`, re-emit the crux and grounded_in directives, and write it back with synapse-write-node.sh.\n\n"
-          + "Keep it incidental. Correct only what this edit actually contradicts. Do NOT re-read the node'"'"'s other sources, do not verify its remaining claims, and do not start a sweep — that is /synapse-rebuild'"'"'s job, and turning this into one is how a cheap habit becomes an expensive one. If the prose still holds despite the range moving, just re-point it and move on."
-        )
-      }
-    }'
+jq -n --arg ctx "$COMBINED" '
+  {
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      additionalContext: $ctx
+    }
+  }'

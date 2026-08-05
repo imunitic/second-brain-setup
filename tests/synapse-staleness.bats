@@ -369,6 +369,38 @@ let line06 = 6
 EOF
 }
 
+# A node whose ## Links section depends_on <target> -- for blast-radius tests,
+# where <target> is the node that directly covers the edited file.
+write_dependent_node() { # write_dependent_node <project> <node> <target>
+  local project="$1" node="$2" target="$3"
+  mkdir -p "$VAULT/synapse/$project"
+  cat > "$VAULT/synapse/$project/$node" <<EOF
+---
+title: "Dependent"
+node_type: synapse-node
+project: $project
+sources:
+  - path: lib/dependent.ml
+    hash: 3333333333333333333333333333333333333333
+sources_digest: "4444444444444444444444444444444444444444444444444444444444444444"
+stale: false
+built_at: "2026-08-03 16:15"
+---
+
+# Dependent
+<!-- synapse:generated:start -->
+
+## Summary
+Depends on $target.
+
+## Links
+- depends_on [[$target]]
+<!-- synapse:generated:end -->
+
+## Notes
+EOF
+}
+
 # calc.ml with a stable doc comment on 1-2 and numbered lines below.
 make_cited_repo() {
   make_repo
@@ -459,6 +491,72 @@ make_cited_repo() {
   run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "PostToolUse"' >/dev/null
+  printf '%s' "$output" | jq -e '.hookSpecificOutput.additionalContext | length > 0' >/dev/null
+}
+
+@test "blast radius: silent when the owning node has no dependents" {
+  make_cited_repo
+  # calc.ml is untouched -- no citation break either, so this isolates the
+  # "no dependents" case rather than piggybacking on the correction check.
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"additionalContext"* ]]
+}
+
+@test "blast radius: fires once when another node depends on the owning node" {
+  make_cited_repo
+  write_dependent_node "$(repo_name)" "Dependent.md" "Cited"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]]
+  [[ "$output" == *"Dependent"* ]]
+  [[ "$output" == *"covered by a Synapse node that other nodes depend on"* ]]
+}
+
+@test "blast radius: silent on a second edit to the same file in the same session" {
+  make_cited_repo
+  write_dependent_node "$(repo_name)" "Dependent.md" "Cited"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]]
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"additionalContext"* ]]
+}
+
+@test "blast radius: a different file under the same session still gets its own first nudge" {
+  make_cited_repo
+  write_dependent_node "$(repo_name)" "Dependent.md" "Cited"
+  printf '(* second file *)\nlet x = 1\n' > "$REPO/lib/calc2.ml"
+  git -C "$REPO" add lib/calc2.ml
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m calc2
+  printf '{"lib/calc.ml":["Cited.md"],"lib/calc2.ml":["Cited.md"],"_unassigned":[]}' \
+    > "$TEST_HOME/index-body.json"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]]
+
+  run run_staleness_hook "$REPO/lib/calc2.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"additionalContext"* ]]
+}
+
+@test "blast radius and correction merge into one additionalContext, not two" {
+  make_cited_repo
+  write_dependent_node "$(repo_name)" "Dependent.md" "Cited"
+  sed_i 's/   Rounds half-up. \*)/   Truncates toward zero. *)/' "$REPO/lib/calc.ml"
+
+  run run_staleness_hook "$REPO/lib/calc.ml" "$TEST_HOME/index-body.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"grounding (lib/calc.ml:1-2)"* ]]
+  [[ "$output" == *"Dependent"* ]]
+  # One JSON object, one additionalContext string carrying both messages --
+  # never two separate hookSpecificOutput emissions.
+  printf '%s' "$output" | jq -e 'type == "object"' >/dev/null
   printf '%s' "$output" | jq -e '.hookSpecificOutput.additionalContext | length > 0' >/dev/null
 }
 

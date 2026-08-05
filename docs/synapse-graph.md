@@ -242,6 +242,24 @@ worth catching.
 Tier 1 therefore answers two questions rather than one: whether something under a node changed, and —
 for the narrow slice it can see — whether a specific claim may no longer hold.
 
+### Blast radius: a second, broader nudge from the same hook
+
+The nodes claiming the edited file (`NODES` above) answer *ownership* — who documents this file —
+not *impact* — who else might be affected by changing it. The hook answers the second question too,
+cheaply, from data it already has: which other nodes have a typed relation (`depends_on`/`uses`/
+`part_of`/etc) pointing *at* one of `NODES`, via the same scan `links --inbound` uses (see "Relations
+between nodes" below) — one `awk` pass over every node file in the namespace, no per-file forks.
+
+This nudge is deliberately looser than the correction nudge above — it fires whenever dependents
+exist at all, not only when something specific broke — so it needs its own narrowing to avoid the
+same "fires constantly, tuned out" failure the correction check was built to avoid. It fires **at
+most once per file per session**: the first edit to a file whose node has dependents gets told;
+later edits to the same file in the same session stay silent, tracked in a small marker file keyed
+by the hook's own `session_id`. A fresh session re-learns it once.
+
+When both checks have something to say about the same edit, they're merged into a single
+`additionalContext` — the hook never emits two separate outputs for one edit.
+
 ### Relations between nodes, derived rather than stored
 
 A node's `## Links` section records typed relations — `- depends_on [[Other Node]]`, `uses`, `part_of`.
@@ -298,7 +316,8 @@ it's not in the index at all, appends it to `_unassigned` instead. No hashing of
 here — the hook already knows with certainty which file just changed, so the flagging half is pure
 bookkeeping, not verification. It does hash one narrow thing: any `crux` or `grounded_in` range those
 nodes cite **in this file**, so an edit that invalidates cited evidence returns a correction nudge. See
-"Opportunistic correction" above for why that slice and no wider.
+"Opportunistic correction" above for why that slice and no wider. It also checks, once per file per
+session, whether any other node depends on the ones claiming this file — see "Blast radius" below.
 
 The hook also refuses to write when the namespace's `remote:` doesn't match the repo's, using the same origin → first-listed-remote → repo-root resolution the SessionStart hook and `synapse-query.sh` use. A namespace with no readable `remote:` counts as a mismatch, not a match on the empty string: absent provenance is not permission to write. All three components must resolve the remote identically, or one refuses where another proceeds.
 

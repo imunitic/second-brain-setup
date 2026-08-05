@@ -17,10 +17,19 @@ flowchart TB
         FLAG["node → stale: true<br/>or the path → _unassigned"]
         CITED{"does this file hold<br/>a crux or grounded_in<br/>range the node cites?"}
         NUDGE["correction nudge:<br/>fix the one sentence this edit<br/>contradicts — nothing wider"]
+        DEPS{"does any other node<br/>depend_on/use/part_of<br/>a node in NODES?"}
+        SEEN{"already told this session,<br/>this file?"}
+        BLAST["blast-radius nudge:<br/>FYI, these nodes depend on<br/>what you just touched"]
         H --> FLAG
         H --> CITED
+        H --> DEPS
         CITED -->|"cited and no longer matching"| NUDGE
         CITED -->|"still matching, or not cited"| SILENT["say nothing"]
+        DEPS -->|"yes"| SEEN
+        DEPS -->|"no dependents"| SILENT
+        SEEN -->|"no"| BLAST
+        SEEN -->|"yes"| SILENT
+        NUDGE -.->|"merged into one<br/>additionalContext"| BLAST
     end
 
     subgraph T2["Tier 2 · procedure, at read time"]
@@ -47,7 +56,7 @@ flowchart TB
     TAGS -.->|"exit 0: use the tags<br/>exit 1: fall back to a full read<br/>exit 2: run discovery once, then retry"| REGEN
 
     class EDIT,READ trigger
-    class H,FLAG,CITED,NUDGE,SILENT hook
+    class H,FLAG,CITED,NUDGE,SILENT,DEPS,SEEN,BLAST hook
     class SK,VERIFY,REGEN,SWEEP skill
     class TAGS,REG optional
 

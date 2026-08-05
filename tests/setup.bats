@@ -41,6 +41,7 @@ hook_count() {
   [ -f "$HOME/.claude/commands/synapse-task-note.md" ]
   [ -f "$HOME/.claude/skills/synapse-node/SKILL.md" ]
   [ -f "$HOME/.claude/skills/synapse-task/SKILL.md" ]
+  [ -f "$HOME/.claude/skills/synapse-query/SKILL.md" ]
 
   [ -f "$HOME/.claude/bin/synapse-tags.sh" ]
   [ -x "$HOME/.claude/bin/synapse-tags.sh" ]
