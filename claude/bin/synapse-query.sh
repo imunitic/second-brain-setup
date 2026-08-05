@@ -198,11 +198,18 @@ grounded_rows() {
         | [$n, .path, (.lines | tostring), .digest] | @tsv'
 }
 
-extract_source_paths() { # frontmatter `  - path: X` lines, in file order
+extract_source_paths() { # frontmatter `sources:` list `  - path: X` lines only, in file order
+  # Scoped to the `sources:` block specifically -- `grounded_in:` entries are
+  # also `- path: X` pairs in the same frontmatter, and since a grounded_in
+  # path is required to already be one of the node's own sources, an
+  # unscoped match double-counts it: same path, hashed twice, joined into a
+  # digest that never matches what synapse-write-node.sh actually stored.
+  # That false "content changed" would fire for every node using grounded_in.
   awk '
     NR == 1 && $0 == "---" { in_fm = 1; next }
     in_fm && $0 == "---" { exit }
-    in_fm && /^[[:space:]]*-[[:space:]]*path:[[:space:]]*/ {
+    in_fm && /^[a-zA-Z_]/ { in_sources = ($0 == "sources:"); next }
+    in_fm && in_sources && /^[[:space:]]*-[[:space:]]*path:[[:space:]]*/ {
       sub(/^[[:space:]]*-[[:space:]]*path:[[:space:]]*/, "")
       print
     }
