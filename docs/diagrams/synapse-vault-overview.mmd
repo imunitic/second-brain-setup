@@ -4,8 +4,11 @@ title: Synapse Vault — how it stays alive across sessions
 %% Kept deliberately flat: NO subgraph for the Vault. Mermaid drew its cluster box
 %% around the hooks and the session too, which reads as "these live inside the
 %% Vault" -- false. Colour carries membership instead, and edge labels are held
-%% to two or three words. Long labels on crossing edges land on top of boxes, and
-%% detail reads better inside a node than beside an arrow.
+%% to two or three words. Long labels on crossing edges land on top of boxes.
+%% -- Boxes carry NAMES. What each hook actually does is in the reference table
+%% under this diagram in docs/synapse-vault.md: a rectangle holding five lines of
+%% mechanism is a paragraph in a box, unreadable at exactly the glance a diagram
+%% exists to serve.
 flowchart TB
     classDef hook fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
     classDef vault fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
@@ -13,13 +16,13 @@ flowchart TB
     classDef store fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
 
     BEGIN["session begins"]
-    H1["<b>SessionStart hook</b><br/>synapse-session-start.sh<br/>injects Index.md, this repo's Graph<br/>pointer, and the catalogue of every<br/>other namespace"]
+    H1["<b>SessionStart</b><br/>synapse-session-start.sh"]
     WORK["<b>Claude Code session</b><br/>reading, editing, deciding"]
-    H2["<b>Stop hook</b><br/>synapse-stop-nudge.sh<br/>every 25 turns: did anything here<br/>belong in the Vault?"]
-    H3["<b>PostToolUse hook</b><br/>synapse-db-sync.sh<br/>fires on any vault-modifying MCP call"]
-    H4["<b>UserPromptSubmit hook</b><br/>synapse-prompt-context.sh<br/>every prompt: extract terms,<br/>surface matching Graph nodes<br/>(SYNAPSE_DISABLE_PROMPT_INJECTION to skip)"]
+    H2["<b>Stop</b><br/>synapse-stop-nudge.sh"]
+    H3["<b>PostToolUse</b><br/>synapse-db-sync.sh"]
+    H4["<b>UserPromptSubmit</b><br/>synapse-prompt-context.sh"]
 
-    IDX["Index.md<br/>the folder map, agent-maintained"]
+    IDX["Index.md"]
     FOLDERS["projects/ · research/ · scratchpad/<br/>inbox/ · designs/"]
     SYN["synapse/{repo}@{branch}/<br/>Synapse Graph namespaces"]
     GIT[("the Vault's own git history")]

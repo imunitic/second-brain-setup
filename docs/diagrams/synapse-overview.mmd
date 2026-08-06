@@ -20,7 +20,7 @@ flowchart TB
 
     subgraph MEM["Permanent memory"]
         direction TB
-        M1["SessionStart hook<br/>injects Index.md + this repo's<br/>Graph pointer + other namespaces"]
+        M1["SessionStart hook<br/>injects the map and<br/>this repo's Graph pointer"]
         M2["Stop hook, every 25 turns:<br/>did anything belong in the Vault?"]
         M3["plain notes -- human and Claude,<br/>outlive any one session"]
         M1 -.-> M3

@@ -11,6 +11,15 @@ search, one sync concern.
 
 ![Synapse Vault overview](diagrams/synapse-vault-overview.png)
 
+The boxes name the four hooks; what each one does is here rather than crammed inside the box.
+
+| Hook | Fires | What it does |
+|---|---|---|
+| `synapse-session-start.sh` | `SessionStart` | Injects `Index.md`, this repo's Graph pointer if a namespace covers the current branch, and a catalogue of the other namespaces in the vault. A plain path lookup — never a model call, so a repo that never opted in pays nothing. |
+| `synapse-prompt-context.sh` | `UserPromptSubmit` | Extracts terms from the prompt and surfaces matching Graph nodes. Set `SYNAPSE_DISABLE_PROMPT_INJECTION` to skip it. |
+| `synapse-stop-nudge.sh` | `Stop`, every 25 turns | Forces a real "did anything here belong in the vault?" check-in rather than relying on the agent to remember unprompted. |
+| `synapse-db-sync.sh` | `PostToolUse` | Commits vault changes to the vault's own git history on any vault-modifying write. That history is what makes a destructive mistake recoverable. |
+
 ## The vault
 
 A regular Obsidian vault, running headless at login with the **Local REST API** plugin installed.

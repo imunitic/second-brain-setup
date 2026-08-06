@@ -10,6 +10,36 @@ consumer (Claude Code only), no multi-agent wiring, no standing CLI surface.
 
 ![Every Synapse script across the build, read, detect and repair phases](diagrams/synapse-pipeline.png)
 
+The boxes carry names; what each one does is here rather than inside the box, because a rectangle
+holding four lines of mechanism cannot be read at a glance — which is the only thing a diagram does
+better than prose.
+
+| Box | What it does |
+|---|---|
+| **model** — orient and cluster | Reads the repo, aggregates paths, and decides what the nodes should be. The one genuinely judgment-shaped step in a build. |
+| **manifest.tsv** — the seam | `title ⇥ include-ERE ⇥ exclude-ERE`, one line per node. The single artifact the model hands to the scripts, and the reason coverage comes out as a printed number rather than a claim. |
+| `synapse-build-lists.sh` | `git ls-files` → `all.txt`, then expands each manifest line into a path list. Prints enumerated / covered / unassigned. |
+| **model** — author node prose | Writes one body per node: summary, a crux *pointer* (never the code itself), links, and any `grounded_in` pointers. |
+| `synapse-push-nodes.sh` | Loops the writer over every node that has both a path list and a body. |
+| `synapse-write-node.sh` | Hashes every path, computes `sources_digest`, slices the crux out of the file from its pointer, digests each `grounded_in` range, builds the `## Sources` mirror, records `commit`. |
+| `synapse-build-index.sh` | Builds `_index.json`, the reverse index the Tier 1 hook reads. |
+| `synapse-build-project-index.sh` | Builds `Index.md`, reading each bullet's headline back off the node's own `summary`. |
+| `synapse-tags.sh` | Optional tree-sitter definitions and references, used as a clustering signal. Falls back to plain reading when unavailable. |
+| `{Node Title}.md × N` | The nodes: `sources`, `sources_digest`, `commit`, `crux_path`, `grounded_in`, `stale`, fenced prose, and a human `## Notes` preserved across regeneration. |
+| `_index.json` | Source path → owning node filenames, plus `_unassigned`. Machine-only. |
+| `Index.md` | The node map, plus the `remote` and `branch` identity fields verified before any read or write. |
+| `_manifest.tsv` · `_profile.txt` | Kept for the next rebuild. |
+| `_tags_cache.json` | `path → {hash, tags, unsupported}`. Machine-only and never authoritative. |
+| `synapse-query.sh` | Projected reads — `body`, `sources`, `field`. Reads the expensive parts internally and prints only what was asked for. |
+| `synapse-query.sh symbol` | Exact-name definition and reference lookup: a cache read, with a lazy parallel backfill on a miss. |
+| `synapse-node` skill | Tier 2 — verify at read time, then regenerate lazily. |
+| `synapse-staleness.sh` | Tier 1 hook — sets `stale: true`, and asks for a correction when cited evidence stops matching. |
+| `synapse-query.sh stale` | Re-hashes what a node claims. Cannot see additions, and reads a rename as a deletion. |
+| `synapse-query.sh drift` | Diffs `commit..HEAD`. The only thing that sees added paths, deletions, renames and a divergent baseline. |
+| `synapse-query.sh grounding` | Re-slices cited evidence: moved → re-point, changed → re-check. |
+| `/synapse-rebuild` | Triage per node — reseat, patch from the diff, or re-orient. |
+| `synapse-graph-clean.sh` | Removes a namespace whose upstream branch is gone; reports anything it cannot confirm. Run deliberately, never fired by a hook. |
+
 The whole system in one picture, and the layout carries an argument. Three lanes — what the **model**
 judges, what a **script** executes, what lands in the **vault** — because the division between the
 first two is the design rule everything else follows from, and drawn this way it is visible rather

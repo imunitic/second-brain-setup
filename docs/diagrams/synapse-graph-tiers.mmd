@@ -16,7 +16,7 @@ flowchart TB
         H["synapse-staleness.sh<br/>PostToolUse: Write / Edit / MultiEdit"]
         FLAG["node → stale: true<br/>or the path → _unassigned"]
         CITED{"does this file hold<br/>a crux or grounded_in<br/>range the node cites?"}
-        NUDGE["correction nudge:<br/>fix the one sentence this edit<br/>contradicts — nothing wider"]
+        NUDGE["correction nudge:<br/>fix the one sentence<br/>this edit contradicts"]
         DEPS{"does any other node<br/>depend_on/use/part_of<br/>a node in NODES?"}
         SEEN{"already told this session,<br/>this file?"}
         BLAST["blast-radius nudge:<br/>FYI, these nodes depend on<br/>what you just touched"]
