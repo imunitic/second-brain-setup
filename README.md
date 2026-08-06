@@ -98,7 +98,18 @@ blocks.
   whole of syrius3 in ~51s. Raw tags are never stored (~942 MB against 6.9 MB of vocabulary); each
   worker pipes `synapse-tags.sh --paths` straight into the reduction. An empty `groupwords.tsv` is a
   legitimate result — no file had a usable grammar — and is the signal to fall back to
-  `synapse-orientation`, which is why it exits 0.
+  `synapse-orientation`, which is why it exits 0. `--lists` keys the same output by *cluster* instead
+  of by directory, which is what `synapse-gate.sh` scores: a cluster is not generally a union of
+  directories, so its vocabulary cannot be derived from the directory-keyed table afterwards.
+- `claude/bin/synapse-gate.sh` — the one quality check `/synapse-init` never had. Coverage was
+  already provable by regex expansion plus `comm`; whether a cluster corresponds to a *concept* was
+  judgment, discovered only when someone tried to write its summary and found nothing to say. Reads
+  a cluster-keyed vocabulary (`synapse-vocab.sh --lists`) and flags any cluster with at most one
+  near-unique term in its top eight, where near-unique is `df <= max(2, N/20)` over N clusters.
+  Deliberately counts rare terms rather than weighing them: ranking by tf-idf *sum* follows frequency
+  rather than rarity and put two known-bad clusters near the top. Measured on the 46 nodes of
+  `syrius3@master`, tolerance 1 caught all four undifferentiated clusters with no false positives.
+  Empty output means every cluster is differentiated.
 - `claude/bin/synapse-build-lists.sh` — enumerates tracked files (dropping binaries, lockfiles,
   minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
   printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
@@ -238,7 +249,10 @@ change, unsupported-file caching so it's never silently retried, and the writer-
 populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), `synapse-vocab.sh` (word
 splitting, stopwording, group keying, per-run warning dedup and the empty-result contract, with the
 fake `tree-sitter` emitting the symbols a fixture authored as `symbol:` lines so a vocabulary
-assertion is about the reduction rather than about the stub), and the five node-building
+assertion is about the reduction rather than about the stub), `synapse-gate.sh` (the flag boundary
+pinned in both directions, document frequency counted across clusters rather than within one, and
+the threshold's floor and scaling — against hand-written vocabulary tables, since what the gate
+decides is separable from how the counts were obtained), and the five node-building
 scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
 four-step build against a throwaway repo and reads the result back through `synapse-query.sh`.
 

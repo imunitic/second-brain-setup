@@ -252,6 +252,85 @@ count_of() { # count_of <group> <word>
   [ -n "$(count_of core/src alpha)" ]
 }
 
+# --- --lists: keyed by cluster rather than by directory --------------------
+#
+# The quality gate scores clusters, and a cluster is not generally a union of
+# directories, so its vocabulary cannot be derived from the directory-keyed
+# table after the fact.
+
+# A synapse-build-lists.sh-shaped lists/ dir: NN.txt paths, NN.title name.
+write_list() { # write_list <NN> <title> <path>...
+  local nn="$1" title="$2"; shift 2
+  mkdir -p "$TEST_HOME/lists"
+  printf '%s\n' "$title" > "$TEST_HOME/lists/$nn.title"
+  printf '%s\n' "$@" > "$TEST_HOME/lists/$nn.txt"
+}
+
+@test "--lists keys vocabulary by node title, cutting across directories" {
+  git init -q "$REPO"
+  src alpha/src/InvoiceCalculator.java InvoiceCalculator
+  src beta/src/DunningSchedule.java    DunningSchedule
+  src beta/src/ParcelRouter.java       ParcelRouter
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=test@test -c user.name=test commit -q -m init
+  # Deliberately not a union of directories: one node takes a file from each.
+  write_list 01 "Billing" alpha/src/InvoiceCalculator.java beta/src/DunningSchedule.java
+  write_list 02 "Shipping" beta/src/ParcelRouter.java
+
+  run run_vocab --lists "$TEST_HOME/lists"
+  [ "$status" -eq 0 ]
+  [ -n "$(count_of Billing invoice)" ]
+  [ -n "$(count_of Billing dunning)" ]
+  [ -z "$(count_of Billing parcel)" ]
+  [ -n "$(count_of Shipping parcel)" ]
+  [ "$(awk -F'\t' '$1 == "Billing" { print $2 }' "$OUT/counts.tsv")" = "2" ]
+}
+
+@test "--lists: a file claimed by two nodes contributes to both" {
+  # Node manifests may legitimately overlap -- synapse-build-lists.sh only
+  # `sort -u`s the union for its coverage count, it does not make lists
+  # disjoint. Keeping one membership would make the gate's verdict depend on
+  # the order the lists happened to be read in.
+  git init -q "$REPO"
+  src core/src/Shared.java InvoiceCalculator
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=test@test -c user.name=test commit -q -m init
+  write_list 01 "Billing"  core/src/Shared.java
+  write_list 02 "Reporting" core/src/Shared.java
+
+  run run_vocab --lists "$TEST_HOME/lists"
+  [ "$status" -eq 0 ]
+  [ -n "$(count_of Billing invoice)" ]
+  [ -n "$(count_of Reporting invoice)" ]
+  [ "$(awk -F'\t' '$1 == "Billing" { print $2 }' "$OUT/counts.tsv")" = "1" ]
+  [ "$(awk -F'\t' '$1 == "Reporting" { print $2 }' "$OUT/counts.tsv")" = "1" ]
+}
+
+@test "--lists: a file no node claims contributes nothing" {
+  git init -q "$REPO"
+  src core/src/Claimed.java InvoiceCalculator
+  src core/src/Orphan.java  OrphanRegistry
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=test@test -c user.name=test commit -q -m init
+  write_list 01 "Billing" core/src/Claimed.java
+
+  run run_vocab --lists "$TEST_HOME/lists"
+  [ "$status" -eq 0 ]
+  [ -n "$(count_of Billing invoice)" ]
+  [ -z "$(awk -F'\t' '$2 == "orphan"' "$OUT/groupwords.tsv")" ]
+}
+
+@test "--lists: a missing or empty lists dir is an error, not a silent empty result" {
+  make_two_module_repo
+  run run_vocab --lists "$TEST_HOME/nope"
+  [ "$status" -eq 1 ]
+
+  mkdir -p "$TEST_HOME/lists"
+  run run_vocab --lists "$TEST_HOME/lists"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"NN.txt/NN.title"* ]]
+}
+
 @test "raw tags are never written to disk, only the reduction" {
   # 98k code files produce ~942 MB of tags against 6.9 MB of vocabulary, so the
   # worker must stream into the reduction. Asserted structurally: the tags-sh

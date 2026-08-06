@@ -6,6 +6,7 @@
 # vocabulary" section.
 #
 # Usage: synapse-vocab.sh [--repo <path>] [--depth N] [--chunk N] [--out <dir>]
+#                         [--lists <dir>]
 #   --repo   default: the git toplevel containing $PWD.
 #   --depth  directory levels that make a group, default 2 (`src/main` from
 #            `src/main/java/Foo.java`). A path shallower than that groups by
@@ -13,9 +14,20 @@
 #   --chunk  files per tree-sitter invocation, default: one chunk per core,
 #            floor 500. Only a parallelism knob -- see below.
 #   --out    default: $SYNAPSE_WORK_DIR, i.e. ~/.claude/synapse-work/{repo}@{branch}/.
+#   --lists  key by CLUSTER instead of by directory: a synapse-build-lists.sh
+#            lists/ dir, where each NN.txt is a node's paths and NN.title its
+#            name. Files no list claims are skipped. --depth is then unused.
 #
 # Writes  <out>/groupwords.tsv   group <TAB> word <TAB> count, group then count desc
 #         <out>/counts.tsv       group <TAB> file count, count desc
+#
+# TWO GROUPINGS, ONE SCRIPT, AND WHY BOTH ARE NEEDED. Directory grouping is the
+# orientation evidence -- it exists before anyone has decided what the nodes
+# are, which is the whole point of it. Cluster grouping is what the quality gate
+# scores, and a cluster is not generally a union of directories, so it cannot be
+# derived from the directory-keyed table after the fact. The second run costs
+# another tagging pass (~51s on syrius3) against a build that was measured in
+# hours, so exactness was the cheaper side of that trade.
 #
 # Prints groups / files / code files / pairs on stderr, so a repo that yielded
 # no vocabulary is a number rather than an empty file nobody looked at.
@@ -64,12 +76,14 @@ REPO=""
 DEPTH=2
 CHUNK=""
 OUT=""
+LISTS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo)  REPO="${2:-}";  shift 2 || usage ;;
         --depth) DEPTH="${2:-}"; shift 2 || usage ;;
         --chunk) CHUNK="${2:-}"; shift 2 || usage ;;
         --out)   OUT="${2:-}";   shift 2 || usage ;;
+        --lists) LISTS="${2:-}"; shift 2 || usage ;;
         -h|--help) usage 0 ;;
         *) usage ;;
     esac
@@ -77,6 +91,7 @@ done
 case "$DEPTH" in ''|*[!0-9]*) usage ;; esac
 [ "$DEPTH" -ge 1 ] || usage
 [ -z "$CHUNK" ] || case "$CHUNK" in ''|*[!0-9]*) usage ;; esac
+[ -z "$LISTS" ] || [ -d "$LISTS" ] || { echo "synapse-vocab: no such lists dir: $LISTS" >&2; exit 1; }
 
 command -v git >/dev/null || { echo "synapse-vocab: git required" >&2; exit 1; }
 if [ -n "$REPO" ]; then
@@ -137,14 +152,52 @@ cd "$REPO_ROOT" || exit 1
 git ls-files > "$W/all.txt" 2>/dev/null || {
     echo "synapse-vocab: git ls-files failed in $REPO_ROOT" >&2; exit 1; }
 LC_ALL=C grep -Ev "$EXTRA_RE" "$W/all.txt" > "$W/kept.txt" || : > "$W/kept.txt"
+
+# --lists: the map from path to cluster title, built once and used by both the
+# counts pass and every worker. A path in two lists is counted under both -- a
+# node manifest can legitimately overlap, and silently picking one would make
+# the flagged/not-flagged verdict depend on directory order.
+MAP=""
+if [ -n "$LISTS" ]; then
+    MAP="$W/pathgroup.tsv"
+    : > "$MAP"
+    for txt in "$LISTS"/[0-9][0-9].txt; do
+        [ -f "$txt" ] || continue
+        title_file="${txt%.txt}.title"
+        [ -f "$title_file" ] || continue
+        title="$(LC_ALL=C head -n 1 "$title_file")"
+        [ -n "$title" ] || continue
+        LC_ALL=C awk -v t="$title" 'NF { print $0 "\t" t }' "$txt" >> "$MAP"
+    done
+    [ -s "$MAP" ] || { echo "synapse-vocab: no NN.txt/NN.title pairs in $LISTS" >&2; exit 1; }
+    # Enumeration narrows to what some list claims: tagging a file no node owns
+    # produces vocabulary with nowhere to go.
+    LC_ALL=C awk -F'\t' 'NR == FNR { m[$1]; next } $0 in m' "$MAP" "$W/kept.txt" > "$W/mapped.txt"
+    mv "$W/mapped.txt" "$W/kept.txt"
+fi
+
 LC_ALL=C grep -E "$CODE_RE" "$W/kept.txt" \
     | LC_ALL=C grep -Ev "$GENERATED_RE" > "$W/code.txt" || : > "$W/code.txt"
 
-# The grouping rule, defined once and textually shared by both output passes:
-# counts.tsv and groupwords.tsv keyed differently is the failure that makes a
-# group look like it has vocabulary but no files, or the reverse.
+# The grouping rule, written into every awk program that needs it rather than
+# retyped in each: counts.tsv and groupwords.tsv keyed differently is the failure
+# that makes a group look like it has vocabulary but no files, or the reverse,
+# and awk has no include. With a map it is a lookup returning every group the
+# path belongs to, joined by \034 -- node lists may overlap, and picking one
+# would make the flagged/not-flagged verdict depend on directory order. An
+# unmapped path returns "", which every caller skips.
 GROUP_FN='
+function load_map(   line, i, key, val) {
+  if (MAP == "") return
+  while ((getline line < MAP) > 0) {
+    i = index(line, "\t")
+    if (i < 1) continue
+    key = substr(line, 1, i - 1); val = substr(line, i + 1)
+    m[key] = (key in m) ? m[key] "\034" val : val
+  }
+}
 function group_of(path,   n, seg, lim, k, i) {
+  if (MAP != "") return (path in m) ? m[path] : ""
   n = split(path, seg, "/")
   lim = (n - 1 < DEPTH) ? n - 1 : DEPTH
   if (lim < 1) return "(repo root)"
@@ -153,10 +206,44 @@ function group_of(path,   n, seg, lim, k, i) {
   return k
 }'
 
-LC_ALL=C awk -v DEPTH="$DEPTH" "$GROUP_FN"'
-  { c[group_of($0)]++ }
-  END { for (k in c) print k "\t" c[k] }
-' "$W/kept.txt" | LC_ALL=C sort -t"$(printf '\t')" -k2,2nr -k1,1 > "$OUT/counts.tsv"
+# Counted off the map itself when there is one, not off kept.txt: a path claimed
+# by two nodes has two map rows and must count once under each.
+if [ -n "$MAP" ]; then
+    LC_ALL=C awk -F'\t' '{ c[$2]++ } END { for (k in c) print k "\t" c[k] }' "$MAP" \
+        | LC_ALL=C sort -t"$(printf '\t')" -k2,2nr -k1,1 > "$OUT/counts.tsv"
+else
+    printf '%s\n%s\n' "$GROUP_FN" '
+      { c[group_of($0)]++ }
+      END { for (k in c) print k "\t" c[k] }
+    ' > "$W/count.awk"
+    LC_ALL=C awk -v DEPTH="$DEPTH" -v MAP="" -f "$W/count.awk" "$W/kept.txt" \
+        | LC_ALL=C sort -t"$(printf '\t')" -k2,2nr -k1,1 > "$OUT/counts.tsv"
+fi
+
+# The reduction, same shared grouping rule. `awk -f` rather than an inline
+# program inside the worker heredoc, which is the only way one definition can
+# serve both without the heredoc's quoting deciding what gets expanded.
+printf '%s\n%s\n' "$GROUP_FN" '
+  BEGIN {
+    while ((getline s < STOP) > 0) stopw[s]
+    load_map()
+  }
+  # Unindented line: a path. Every tab-indented line after it holds one tag for
+  # that path, and field 2 of such a line is the symbol name.
+  /^[^\t]/ { ng = split(group_of($0), gs, "\034"); if (gs[1] == "") ng = 0; next }
+  ng == 0 { next }
+  {
+    s = $2
+    while (match(s, /[A-Z]+[a-z0-9]*|[a-z0-9]+/)) {
+      w = tolower(substr(s, RSTART, RLENGTH))
+      s = substr(s, RSTART + RLENGTH)
+      if (length(w) < 4) continue
+      if (w ~ /^[0-9]+$/) continue
+      if (w in stopw) continue
+      for (j = 1; j <= ng; j++) print gs[j] "\t" w
+    }
+  }
+' > "$W/reduce.awk"
 
 # The tokenizer's own list, cleaned once here rather than per worker: comments
 # and blanks stripped, lowercased to match the lowercased words.
@@ -188,44 +275,20 @@ split -l "$CHUNK" "$W/code.txt" "$W/chunks/c."
 # suspiciously fast run producing nothing rather than an error.
 cat > "$W/worker.sh" <<'WORKER'
 #!/bin/bash
-# worker.sh <chunk> <words-dir> <depth> <stopwords> <tags-sh>
+# worker.sh <chunk> <words-dir> <depth> <stopwords> <tags-sh> <reduce.awk> <map>
 # Derives its own output name so the caller can pass one fixed directory: with
 # `xargs -I {}` the placeholder is substituted into every argument, so building
 # the output path outside would splice the chunk's full path into it.
-chunk="$1"; words="$2"; depth="$3"; stop="$4"; tags_sh="$5"
+chunk="$1"; words="$2"; depth="$3"; stop="$4"; tags_sh="$5"; prog="$6"; map="$7"
 out="$words/$(basename "$chunk").tsv"
 "$tags_sh" --paths "$chunk" 2>"$out.err" \
-  | LC_ALL=C awk -F'\t' -v DEPTH="$depth" -v STOP="$stop" '
-      function group_of(path,   n, seg, lim, k, i) {
-        n = split(path, seg, "/")
-        lim = (n - 1 < DEPTH) ? n - 1 : DEPTH
-        if (lim < 1) return "(repo root)"
-        k = seg[1]
-        for (i = 2; i <= lim; i++) k = k "/" seg[i]
-        return k
-      }
-      BEGIN { while ((getline s < STOP) > 0) stopw[s] }
-      # Unindented line: a path. Every tab-indented line after it holds one tag
-      # for that path, and field 2 of such a line is the symbol name.
-      /^[^\t]/ { g = group_of($0); next }
-      g == "" { next }
-      {
-        s = $2
-        while (match(s, /[A-Z]+[a-z0-9]*|[a-z0-9]+/)) {
-          w = tolower(substr(s, RSTART, RLENGTH))
-          s = substr(s, RSTART + RLENGTH)
-          if (length(w) < 4) continue
-          if (w ~ /^[0-9]+$/) continue
-          if (w in stopw) continue
-          print g "\t" w
-        }
-      }
-    ' > "$out"
+  | LC_ALL=C awk -F'\t' -v DEPTH="$depth" -v STOP="$stop" -v MAP="$map" -f "$prog" > "$out"
 WORKER
 chmod +x "$W/worker.sh"
 
 find "$W/chunks" -type f -name 'c.*' -print0 \
-    | xargs -0 -P "$NP" -I {} "$W/worker.sh" {} "$W/words" "$DEPTH" "$W/stop.txt" "$TAGS_SH"
+    | xargs -0 -P "$NP" -I {} "$W/worker.sh" {} "$W/words" "$DEPTH" "$W/stop.txt" \
+          "$TAGS_SH" "$W/reduce.awk" "$MAP"
 
 # Counted in awk, not `sort | uniq -c`: uniq's count column is space-separated,
 # so a group key containing a space would shift every field downstream. The

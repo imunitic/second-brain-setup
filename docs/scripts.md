@@ -81,6 +81,70 @@ its own -- see docs/synapse-graph.md for why.
 Note for agent callers: needs the sandbox disabled (localhost REST API).
 ```
 
+## `synapse-gate.sh`
+
+Flags candidate clusters that own no vocabulary of their own, before anyone
+pays to author their prose. The one quality check /synapse-init never had:
+coverage was already provable by regex expansion plus `comm`, but whether a
+cluster corresponds to a *concept* was judgment, discovered only when someone
+tried to write its summary and found there was nothing to say.
+
+```
+Usage: synapse-gate.sh --vocab <groupwords.tsv> [--all] [--top N]
+  --vocab  cluster-keyed vocabulary: `cluster <TAB> word <TAB> count`, i.e.
+           synapse-vocab.sh run with --lists. NOT the directory-keyed table --
+           see "RUN IT ON CLUSTERS" below, which is the whole reason the
+           threshold ever looked unstable.
+  --all    print every cluster with its score, not only the flagged ones.
+  --top    terms per cluster the rule looks at, default 8.
+
+Prints `cluster <TAB> rare-count <TAB> flagged|ok <TAB> top terms`, one line
+per flagged cluster -- so empty output means every cluster is differentiated,
+matching the reporting convention of `synapse-query.sh stale`/`drift`/
+`grounding`. `--all` adds the `ok` rows in the same shape rather than a
+second one, so the same field positions parse either way.
+
+THE RULE, and why it is this and not something more obvious:
+
+  rare  := df <= max(2, N/20)      # N = number of clusters, df over clusters
+  flag  := count of rare terms among the cluster's top TOP <= 1
+
+Terms rank within a cluster by raw count. Ranking by tf-idf *sum* is what
+fails: a sum follows frequency rather than rarity, and it put two known-bad
+clusters near the TOP of the list. What separates a real concept from a
+generic one is not how much distinctive vocabulary it has in total, it is
+whether it has any at all -- so the rule counts near-unique terms rather than
+weighing them.
+
+Measured against the four known-undifferentiated clusters in syrius3@master
+(46 nodes): tolerance 0 catches three with no false positives, tolerance 1
+catches all four with no false positives, tolerance 2 catches four but flags
+five good clusters as well. The `max(2, N/20)` form reduces to the constant
+that worked at that corpus size and scales with cluster count instead of
+needing recalibration per repo.
+
+RUN IT ON CLUSTERS, NOT ON MODULE GROUPS. A few dozen candidate clusters, not
+the several hundred directory groups that form the orientation evidence.
+Document frequency across 500 groups means something entirely different from
+document frequency across 46 clusters, and feeding the wrong table in is what
+made the threshold look like it needed tuning.
+
+KNOWN LIMIT, deliberately unfixed: the rule cannot distinguish "owns no
+distinctive vocabulary" from "produced no vocabulary". Both present as zero
+rare terms. In a single-language repo the ambiguity cannot arise. In a mixed
+repo, a cluster whose code is in a language with no grammar is flagged as
+undifferentiated when it should be left alone -- so treat a flag on such a
+cluster as "look at it", which is all a flag ever means here. Whatever
+eventually addresses mixed repos has to give this rule a parseable-fraction
+signal to tell the two cases apart.
+
+Exit codes:
+  0 - ran. Flagged clusters, if any, are on stdout; a flag is advice to
+      re-cluster or disperse, never a hard stop, so this is 0 either way.
+  1 - could not run (unreadable or empty vocabulary file)
+  2 - usage error
+```
+
 ## `synapse-graph-clean.sh`
 
 Removes Synapse namespaces whose branch was deleted upstream, and reports the
@@ -351,6 +415,7 @@ vocabulary" section.
 
 ```
 Usage: synapse-vocab.sh [--repo <path>] [--depth N] [--chunk N] [--out <dir>]
+                        [--lists <dir>]
   --repo   default: the git toplevel containing $PWD.
   --depth  directory levels that make a group, default 2 (`src/main` from
            `src/main/java/Foo.java`). A path shallower than that groups by
@@ -358,9 +423,20 @@ Usage: synapse-vocab.sh [--repo <path>] [--depth N] [--chunk N] [--out <dir>]
   --chunk  files per tree-sitter invocation, default: one chunk per core,
            floor 500. Only a parallelism knob -- see below.
   --out    default: $SYNAPSE_WORK_DIR, i.e. ~/.claude/synapse-work/{repo}@{branch}/.
+  --lists  key by CLUSTER instead of by directory: a synapse-build-lists.sh
+           lists/ dir, where each NN.txt is a node's paths and NN.title its
+           name. Files no list claims are skipped. --depth is then unused.
 
 Writes  <out>/groupwords.tsv   group <TAB> word <TAB> count, group then count desc
         <out>/counts.tsv       group <TAB> file count, count desc
+
+TWO GROUPINGS, ONE SCRIPT, AND WHY BOTH ARE NEEDED. Directory grouping is the
+orientation evidence -- it exists before anyone has decided what the nodes
+are, which is the whole point of it. Cluster grouping is what the quality gate
+scores, and a cluster is not generally a union of directories, so it cannot be
+derived from the directory-keyed table after the fact. The second run costs
+another tagging pass (~51s on syrius3) against a build that was measured in
+hours, so exactness was the cheaper side of that trade.
 
 Prints groups / files / code files / pairs on stderr, so a repo that yielded
 no vocabulary is a number rather than an empty file nobody looked at.
