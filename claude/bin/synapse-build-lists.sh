@@ -124,15 +124,33 @@ if [[ ! -s "$ALL" || "$reenumerate" == true ]]; then
         # disk, and `git hash-object` fails the whole batch on one. Written as an
         # `if` because as the body's last statement a false `[[ -f ]] && printf`
         # makes the loop exit 1, which under `set -e` kills the script.
+        # `[[ -f ]]` is a shell builtin, so this loop stays subprocess-free. Sizes
+        # are NOT taken here: a `wc -c` per path costs one fork each, which
+        # measured 21s for 3,000 files -- about 15 minutes on a 125k-file repo,
+        # against 0.075s for the batched `stat` below. Per-file forks are the
+        # thing to avoid in any loop over a whole repository.
         if [[ -f "$p" ]]; then
-            sz=$(wc -c < "$p" 2>/dev/null | tr -d ' ')
-            if [[ "${sz:-0}" -gt "$MAX_FILE_BYTES" ]]; then
-                printf '%s\t%s\n' "${sz:-0}" "$p" >> "$WORK_DIR/oversize.txt"
-            else
-                printf '%s\n' "$p"
-            fi
+            printf '%s\n' "$p"
         fi
-    done > "$ALL"
+    done > "$WORK_DIR/candidates.txt"
+
+    # One `stat` per xargs batch rather than per file. Both dialects: BSD takes
+    # -f '%z %N', GNU -c '%s %n', and CI runs Linux while development runs macOS.
+    if stat -f '%z' . >/dev/null 2>&1; then
+        stat_args=(-f '%z %N')
+    else
+        stat_args=(-c '%s %n')
+    fi
+    tr '\n' '\0' < "$WORK_DIR/candidates.txt" \
+        | xargs -0 stat "${stat_args[@]}" 2>/dev/null \
+        | awk -v cap="$MAX_FILE_BYTES" -v over="$WORK_DIR/oversize.txt" '
+            {
+              sz = $1
+              name = $0; sub(/^[0-9]+ /, "", name)   # a path may contain spaces
+              if (sz > cap) printf "%s\t%s\n", sz, name >> over
+              else print name
+            }' > "$ALL"
+    rm -f "$WORK_DIR/candidates.txt"
 fi
 
 rm -rf "$LISTS"
