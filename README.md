@@ -205,11 +205,11 @@ is a test that will fail intermittently under `--jobs`, and intermittently is th
 out.** The one sanctioned exception is `$REAL_HOME`, for caches that genuinely cannot be faked
 (puppeteer's Chromium, npm's package cache), and it is read-mostly by the two diagram-rendering tests.
 
-The same suite runs in CI on every push and pull request, on both Linux and macOS
-(`.github/workflows/tests.yml`). Both platforms deliberately: the two shells disagree in ways that pass
-silently on one of them — BSD versus GNU `sed -i`, and macOS `mktemp` ignoring `TMPDIR` unless given an
-explicit template — so a single-platform run would keep finding out about the other one from a bug
-report.
+The same suite runs in CI on every push and pull request, on **Linux** (`.github/workflows/tests.yml`).
+Both platforms do need covering — the two shells disagree in ways that pass silently on one of them,
+BSD versus GNU `sed -i`, and macOS `mktemp` ignoring `TMPDIR` unless given an explicit template — but
+macOS is covered by development itself, since the suite is written and run there. Linux is the half
+nobody exercises by hand, so it is the half CI is spent on.
 
 Covers `setup.sh` (idempotent install and merge into a scratch `$HOME`),
 `synapse-session-start.sh` (index injection, the Graph pointer check, and the other-namespaces

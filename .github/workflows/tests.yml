@@ -11,25 +11,27 @@ on:
 
 jobs:
   bats:
-    # Both platforms deliberately. The scripts and tests are developed on macOS,
-    # while anyone cloning this is as likely to be on Linux -- and the two shells
-    # disagree in ways that pass silently on one of them (BSD vs GNU sed -i, and
-    # macOS mktemp ignoring TMPDIR without an explicit template). A matrix is the
-    # only thing that keeps both honest.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # Linux only, and the asymmetry is the point rather than an economy. The two
+    # shells disagree in ways that pass silently on one of them -- BSD vs GNU
+    # `sed -i`, macOS `mktemp` ignoring TMPDIR without an explicit template -- so
+    # both still need covering. macOS is covered by development itself: the suite
+    # is written and run there before anything is pushed. Linux is the half nobody
+    # exercises by hand, which is exactly the half worth spending CI on.
+    #
+    # The cost of dropping it: a macOS-only regression now lands whenever a push
+    # happens without a local run first, and a contributor on Linux gets no signal
+    # at all. If either starts happening, put macos-latest back as a matrix entry
+    # (fail-fast: false) rather than inventing something cleverer.
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
 
-      # npm rather than apt/brew: it gives the same bats version on both runners,
-      # and the distro packages lag far enough behind to differ from each other.
-      # Into a user prefix rather than the system one: a plain `npm install -g` is
-      # writable on the macOS runner but EACCES on Linux, and using sudo on one
-      # platform only is how the two configurations start drifting apart.
+      # npm rather than apt: it pins one bats version regardless of runner image,
+      # and the distro package lags far enough behind to differ. Into a user prefix
+      # because a plain `npm install -g` is EACCES on the Linux runner, and reaching
+      # for sudo to work around that is how a CI setup starts diverging from how
+      # anyone actually installs the thing.
       - name: Install bats
         run: |
           npm install -g --prefix "$HOME/.npm-global" bats
@@ -38,13 +40,11 @@ jobs:
       # GNU parallel is what `bats --jobs` shells out to. Without it bats does not
       # fail, it silently runs serially -- so this step existing is the only thing
       # separating a parallel run from a slow one that looks identical in the log.
+      # Restoring macos-latest means restoring a `brew install parallel` branch here
+      # too. Left as apt-only rather than keeping a dead $RUNNER_OS conditional: an
+      # unreachable branch is not a spare tyre, it is a thing that rots unnoticed.
       - name: Install GNU parallel
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get update -qq && sudo apt-get install -y parallel
-          else
-            brew install parallel
-          fi
+        run: sudo apt-get update -qq && sudo apt-get install -y parallel
 
       - name: Show versions
         run: |
