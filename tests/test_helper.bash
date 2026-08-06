@@ -10,9 +10,22 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FAKE_BIN="$REPO_ROOT/tests/fixtures/fake-bin"
 
 common_setup() {
+  # Neutralise an inherited TMPDIR before anything uses it. Whatever launched the
+  # suite decides this, and an editor-hosted terminal routinely points it
+  # somewhere surprising -- Emacs sets it to ~/.emacs.d/var/tmp, which is *inside
+  # a git repo*, so every scratch directory resolved to that repo and any test
+  # asserting "this is not a git repo" passed for the wrong reason. Fixing the
+  # source beats defending against it in each test.
+  #
+  # /tmp preferred, the inherited value kept only if /tmp is unusable -- which is
+  # the case the original explicit-template comment was protecting, and is why
+  # this is a preference rather than a hardcoding.
+  if [ -d /tmp ] && [ -w /tmp ]; then
+    export TMPDIR=/tmp
+  fi
+
   # Explicit template for the same reason the shipped scripts use one: macOS
-  # `mktemp -d` with no template ignores TMPDIR, so the suite could not run at
-  # all anywhere the system temp dir is not writable.
+  # `mktemp -d` with no template ignores TMPDIR entirely.
   TEST_HOME="$(mktemp -d "${TMPDIR:-/tmp}/synapse-test.XXXXXX")"
   VAULT="$TEST_HOME/vault"
   REPO="$TEST_HOME/repo"

@@ -18,6 +18,16 @@ setup() {
 
 teardown() { common_teardown; }
 
+@test "the scratch dir is not inside a git repo -- the isolation everything rests on" {
+  # Not testing shipped code: pinning the invariant the whole suite assumes. It
+  # was silently false on a machine whose TMPDIR pointed inside a git repo (an
+  # Emacs-hosted terminal sets it to ~/.emacs.d/var/tmp), which made every
+  # "this is not a git repo" assertion pass for the wrong reason. Nothing
+  # asserted it, so nothing noticed.
+  run git -C "$TEST_HOME" rev-parse --show-toplevel
+  [ "$status" -ne 0 ]
+}
+
 @test "repo name comes from the remote, not the directory" {
   make_repo "ssh://git@example.invalid:7999/syr/syrius3.git"
   [ "$(synapse_repo_name "$REPO")" = "syrius3" ]
