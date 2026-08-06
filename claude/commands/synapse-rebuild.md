@@ -113,6 +113,13 @@ Then rebuild the reverse index so the hook and the read path agree with the new 
 
 ### 3. Triage each flagged node — reseat, patch, or re-orient
 
+**Two shared references before triaging.** The node contract — frontmatter, the crux pointer,
+`## Links`, `grounded_in` — is `~/.claude/synapse-reference/node-format.md`, the same one
+`/synapse-init` and the `synapse-node` skill write against. For a node in the *re-orient* class,
+whose premises have to be re-derived rather than patched,
+`~/.claude/synapse-reference/orientation.md` is the technique for working out where meaning lives in
+a tree, which is the same problem a first build faces.
+
 **The principle: compute new prose from the diff, not by re-reading the node's sources.** A node
 covering 15,000 files where 12 changed already has prose encoding the other 14,988. Re-reading it all
 is the expensive mistake this command exists to avoid, and it also throws away hard-won findings the

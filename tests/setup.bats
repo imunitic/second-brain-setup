@@ -43,6 +43,17 @@ hook_count() {
   [ -f "$HOME/.claude/skills/synapse-task/SKILL.md" ]
   [ -f "$HOME/.claude/skills/synapse-query/SKILL.md" ]
 
+  # Shared references. Asserted by name rather than by counting files, because the
+  # failure this guards against is one of them silently not installing -- the same
+  # shape as the bin/ script that was missed until the installer globbed instead of
+  # naming each file.
+  [ -f "$HOME/.claude/synapse-reference/node-format.md" ]
+  [ -f "$HOME/.claude/synapse-reference/orientation.md" ]
+  # ...and they must NOT land in commands/, where a .md file registers as a slash
+  # command. These are read at a step, not invoked.
+  [ ! -e "$HOME/.claude/commands/node-format.md" ]
+  [ ! -e "$HOME/.claude/commands/orientation.md" ]
+
   [ -f "$HOME/.claude/bin/synapse-tags.sh" ]
   [ -x "$HOME/.claude/bin/synapse-tags.sh" ]
 

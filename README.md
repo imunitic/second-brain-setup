@@ -36,6 +36,13 @@ your call).
   delegate to `synapse-note.md --task` and `skills/synapse-task/`, not a separate mechanism.
 - `claude/skills/synapse-task/` — proactive task-status tracking.
 
+`claude/synapse-reference/` holds documents that several components read but none owns:
+`node-format.md` (the node contract, shared by `/synapse-init`, the `synapse-node` skill and
+`/synapse-rebuild`, all of which write nodes) and `orientation.md` (how to work out where meaning
+lives in an unfamiliar tree, shared by a first build and rebuild's re-orient class). Deliberately not
+under `commands/`, where a `.md` file would register as a slash command — these are read at a step,
+not invoked.
+
 ## Synapse Graph — the per-repo code graph
 
 A few dozen LLM-authored node notes per repo, one per subsystem or concept, each carrying a
