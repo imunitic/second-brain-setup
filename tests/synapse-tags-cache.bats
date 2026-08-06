@@ -132,6 +132,39 @@ write_sample_files() { # write_sample_files <count>
   done
 }
 
+@test "path containing a space: cached correctly, no stray result file" {
+  # Regression: the parallel step used `xargs -L 1` with three positional
+  # args, and xargs word-splits on spaces as well as tabs -- so this path
+  # shifted every field, tagged the wrong file, and wrote its result outside
+  # $WORK/results (where the merge never saw it). The entry silently never
+  # entered the cache and was re-attempted on every subsequent call.
+  make_repo
+  mkdir -p "$REPO/src/some dir"
+  printf 'let spaced = 1\n' > "$REPO/src/some dir/spaced.ml"
+  printf 'let plain = 2\n' > "$REPO/plain.ml"
+  h_spaced="$(git -C "$REPO" hash-object "src/some dir/spaced.ml")"
+  h_plain="$(git -C "$REPO" hash-object "plain.ml")"
+  printf 'src/some dir/spaced.ml\t%s\nplain.ml\t%s\n' "$h_spaced" "$h_plain" > "$TEST_HOME/paths.tsv"
+
+  cd "$TEST_HOME"
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+
+  [ "$(jq 'keys | length' "$TEST_HOME/_tags_cache.json")" -eq 2 ]
+  [[ "$(jq -r '."src/some dir/spaced.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"FAKE_NAME"* ]]
+  [ "$(jq -r '."src/some dir/spaced.ml".hash' "$TEST_HOME/_tags_cache.json")" = "$h_spaced" ]
+  [ "$(jq -r '."src/some dir/spaced.ml".unsupported' "$TEST_HOME/_tags_cache.json")" = "false" ]
+  # The stray-file symptom: a result written to a name derived from a shifted
+  # field lands in the caller's cwd instead of the work dir.
+  [ ! -e "$TEST_HOME/$h_spaced" ]
+
+  # And it is genuinely current -- not re-tagged on the next run.
+  : > "$FAKE_TS_LOG"
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
 @test "missing arguments: usage error, exit 1" {
   run run_cache --repo-root "$REPO"
   [ "$status" -eq 1 ]

@@ -12,7 +12,8 @@
 #            file the caller wants current in the cache (a node's `sources`,
 #            typically -- the caller already has both path and hash).
 #
-#   Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4).
+#   Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4),
+#   fed NUL-terminated records so paths containing spaces survive intact.
 #   Every worker tags one file and writes its own result to a private temp
 #   file; a single sequential step afterward merges those into the cache in
 #   one pass. No worker ever writes the shared cache file directly.
@@ -87,15 +88,31 @@ tag_one() { # tag_one <path> <hash> <outfile>
 export -f tag_one
 export REPO_ROOT
 
+# Splits one job record and hands its fields to tag_one. A separate function
+# purely so the xargs child below stays free of tab-quoting gymnastics.
+tag_record() { # tag_record <path TAB hash TAB outfile>
+  local path hash outfile
+  IFS=$'\t' read -r path hash outfile <<< "$1"
+  tag_one "$path" "$hash" "$outfile"
+}
+export -f tag_record
+
+# NUL-terminated records, one whole record per child (`-0 -n 1`), split on the
+# tab inside the child -- NOT `-L 1` with three positional args. xargs word-
+# splits on blanks, tabs *and spaces* alike, so a source path containing a
+# space would shift every field: the child would tag the wrong path and write
+# its result to a stray file outside $WORK/results, which the merge below then
+# skips. That path would never enter the cache, so `synapse-query.sh symbol`
+# would report it as "not checked" and re-attempt it on every single call.
 mkdir -p "$WORK/results"
 i=0
-: > "$WORK/jobs.tsv"
+: > "$WORK/jobs.nul"
 while IFS=$'\t' read -r path hash; do
   i=$((i + 1))
-  printf '%s\t%s\t%s/results/%s.json\n' "$path" "$hash" "$WORK" "$i" >> "$WORK/jobs.tsv"
+  printf '%s\t%s\t%s/results/%s.json\0' "$path" "$hash" "$WORK" "$i" >> "$WORK/jobs.nul"
 done < "$WORK/needs-tagging.tsv"
 
-xargs -P "$N" -L 1 bash -c 'tag_one "$1" "$2" "$3"' _ < "$WORK/jobs.tsv"
+xargs -0 -P "$N" -n 1 bash -c 'tag_record "$1"' _ < "$WORK/jobs.nul"
 
 # --- sequential join: one jq pass merges every result into the cache -------
 # `-s` slurps the cache plus every result file into one array: .[0] is the

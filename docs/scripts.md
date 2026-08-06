@@ -165,7 +165,8 @@ Usage: synapse-tags-cache.sh --repo-root <path> --cache <_tags_cache.json path> 
            file the caller wants current in the cache (a node's `sources`,
            typically -- the caller already has both path and hash).
 
-  Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4).
+  Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4),
+  fed NUL-terminated records so paths containing spaces survive intact.
   Every worker tags one file and writes its own result to a private temp
   file; a single sequential step afterward merges those into the cache in
   one pass. No worker ever writes the shared cache file directly.
