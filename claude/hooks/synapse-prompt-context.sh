@@ -50,17 +50,14 @@ CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty')"
 
 REPO_ROOT="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || exit 0
-REPO_NAME="$(basename "$REPO_ROOT")"
 
-# Same origin -> first-listed-remote -> repo-root resolution chain
-# synapse-staleness.sh/synapse-session-start.sh/synapse-query.sh all use --
-# a different chain here means one component refuses where another proceeds.
-REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [ -z "$REMOTE" ]; then
-  FIRST_REMOTE="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-  [ -n "$FIRST_REMOTE" ] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$FIRST_REMOTE" 2>/dev/null || true)"
-fi
-[ -n "$REMOTE" ] || REMOTE="$REPO_ROOT"
+# One shared resolution of repo, branch and remote, so this hook cannot drift
+# from synapse-staleness.sh / synapse-session-start.sh / synapse-query.sh.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || exit 0
+REMOTE="$(synapse_remote "$REPO_ROOT")"
+# Detached HEAD: no branch, so no namespace to inject context from.
+REPO_NAME="$(synapse_namespace "$REPO_ROOT" 2>/dev/null)" || exit 0
 
 NS_INDEX="$VAULT/synapse/$REPO_NAME/Index.md"
 [ -f "$NS_INDEX" ] || exit 0

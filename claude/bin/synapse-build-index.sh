@@ -4,7 +4,7 @@
 # Step 3 of a scripted /synapse-init.
 #
 # Usage: synapse-build-index.sh
-#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 #
 # Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title, unassigned.txt
 # Writes synapse/{repo}/_index.json in the vault
@@ -38,7 +38,14 @@ command -v jq >/dev/null || { echo "synapse-build-index: jq required" >&2; exit 
 command -v git >/dev/null || { echo "synapse-build-index: git required" >&2; exit 1; }
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-build-index: not inside a git repo" >&2; exit 1; }
-REPO_NAME="$(basename "$REPO_ROOT")"
+
+# REPO_NAME holds the namespace key "{repo}@{branch}", not a bare repo name -- a
+# namespace describes one branch. Every path below keeps its single-segment
+# shape, so what the key contains is the only thing that changed.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+    echo "synapse-build-index: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
 
 # Never $PWD: that is the repo, and working files do not belong in a user's checkout.
 readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}"

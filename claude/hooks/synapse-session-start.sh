@@ -25,14 +25,16 @@ if [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
   [ -n "$CWD" ] || CWD="$PWD"
 
   REPO_ROOT="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  # shellcheck source=/dev/null
+  . "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || REPO_ROOT=""
+  # A detached HEAD has no branch and so no namespace; blanking REPO_ROOT takes
+  # the same path as "not in a git repo at all", which already says nothing
+  # about a Graph and still injects the vault index below.
+  if [ -n "$REPO_ROOT" ] && ! REPO_NAME="$(synapse_namespace "$REPO_ROOT" 2>/dev/null)"; then
+    REPO_ROOT=""
+  fi
   if [ -n "$REPO_ROOT" ]; then
-    REPO_NAME="$(basename "$REPO_ROOT")"
-    REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-    if [ -z "$REMOTE" ]; then
-      FIRST_REMOTE="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-      [ -n "$FIRST_REMOTE" ] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$FIRST_REMOTE" 2>/dev/null || true)"
-    fi
-    [ -n "$REMOTE" ] || REMOTE="$REPO_ROOT"
+    REMOTE="$(synapse_remote "$REPO_ROOT")"
 
     SYNAPSE_INDEX="$OBSIDIAN_VAULT_DIR/synapse/$REPO_NAME/Index.md"
     if [ -f "$SYNAPSE_INDEX" ]; then

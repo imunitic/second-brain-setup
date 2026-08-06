@@ -3,7 +3,7 @@
 # scripted /synapse-init.
 #
 # Usage: synapse-push-nodes.sh [NN ...]      (default: every staged or authored node)
-#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 #
 # Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (from synapse-build-lists.sh)
 #        $SYNAPSE_WORK_DIR/b-NN.md                   (authored per node, see below)
@@ -41,7 +41,17 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-push-nodes: not inside a git repo" >&2; exit 1; }
 
 # Never $PWD: that is the repo, and working files do not belong in a user's checkout.
-readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$(basename "$REPO_ROOT")}"
+# Keyed by the same "{repo}@{branch}" its siblings use -- build-lists.sh writes
+# this directory and push-nodes.sh reads it, so a different key here would have
+# them silently disagree about where a build's path lists live. Per-branch is
+# also what the contents want: `all.txt` is reused unless --reenumerate is
+# passed, and reusing another branch's enumeration is exactly the drift that
+# rule exists to avoid.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+    echo "synapse-push-nodes: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
+readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}"
 readonly LISTS="$WORK_DIR/lists"
 # Resolve the writer next to this script, so an installed copy finds its sibling
 # rather than whatever happens to be on PATH.

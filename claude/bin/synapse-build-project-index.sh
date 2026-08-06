@@ -4,7 +4,7 @@
 # Step 4 (last) of a scripted /synapse-init.
 #
 # Usage: synapse-build-project-index.sh
-#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 #
 # Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (for titles and file counts)
 #        each node's `summary` frontmatter field, fetched from the vault
@@ -30,7 +30,12 @@ command -v git >/dev/null || { echo "synapse-build-project-index: git required" 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || {
     echo "synapse-build-project-index: not inside a git repo" >&2; exit 1; }
-REPO_NAME="$(basename "$REPO_ROOT")"
+
+# "{repo}@{branch}", not a bare repo name -- see synapse-identity.sh.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+    echo "synapse-build-project-index: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
 
 # Never $PWD: that is the repo, and working files do not belong in a user's checkout.
 readonly WORK_DIR="${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}"
@@ -59,12 +64,7 @@ PORT="$(jq -r '.port // empty' "$PLUGIN_DATA")"
 
 # Same origin -> first-remote -> repo-root resolution as every other Synapse
 # component. A mismatch here is what makes the SessionStart hook stay silent.
-REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [[ -z "$REMOTE" ]]; then
-    first_remote="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-    [[ -n "$first_remote" ]] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$first_remote" 2>/dev/null || true)"
-fi
-[[ -n "$REMOTE" ]] || REMOTE="$REPO_ROOT"
+REMOTE="$(synapse_remote "$REPO_ROOT")"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/synapse-pindex.XXXXXX")"
 trap 'rm -rf "$work"' EXIT

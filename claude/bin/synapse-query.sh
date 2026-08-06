@@ -113,17 +113,18 @@ BASE="https://127.0.0.1:$PORT"
 
 REPO_ROOT="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || exit 1
-REPO_NAME="$(basename "$REPO_ROOT")"
 
-# Same origin -> first-remote -> repo-root resolution the SessionStart hook and
-# synapse-staleness.sh use. It must match exactly, or a repo without an `origin`
-# compares unequal against its own namespace.
-REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [ -z "$REMOTE" ]; then
-  FIRST_REMOTE="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-  [ -n "$FIRST_REMOTE" ] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$FIRST_REMOTE" 2>/dev/null || true)"
-fi
-[ -n "$REMOTE" ] || REMOTE="$REPO_ROOT"
+# One shared resolution of repo, branch and remote, so this cannot disagree with
+# the hooks about which namespace a checkout belongs to -- a repo without an
+# `origin`, or on a branch with no namespace, must compare the same way here as
+# it does there.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+  echo "synapse-query: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REMOTE="$(synapse_remote "$REPO_ROOT")"
+# Exit 1, not 0: this is "could not run", never "clean". A detached HEAD has no
+# namespace, and reporting silence would read as a graph that matches.
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
 
 urlencode_path() {
   local path="$1" seg out=()

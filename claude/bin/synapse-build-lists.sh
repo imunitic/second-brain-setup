@@ -3,7 +3,7 @@
 # list per node, then reports coverage. Step 1 of a scripted /synapse-init.
 #
 # Usage: synapse-build-lists.sh [--reenumerate]
-#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+#   Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 #   Never the script's own location, and never the repo -- see below.
 #
 # Reads   $SYNAPSE_WORK_DIR/manifest.tsv   title <TAB> include-ERE <TAB> exclude-ERE
@@ -36,7 +36,12 @@ esac
 command -v git >/dev/null || { echo "synapse-build-lists: git required" >&2; exit 1; }
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-build-lists: not inside a git repo" >&2; exit 1; }
-REPO_NAME="$(basename "$REPO_ROOT")"
+
+# "{repo}@{branch}", not a bare repo name -- see synapse-identity.sh.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+    echo "synapse-build-lists: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
 
 # Not $PWD: the repo is resolved from $PWD, so a $PWD default would write the
 # enumeration and lists into the user's checkout. Per repo, so a re-run finds the

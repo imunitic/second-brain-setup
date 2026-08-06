@@ -16,7 +16,7 @@ Step 3 of a scripted /synapse-init.
 
 ```
 Usage: synapse-build-index.sh
-  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 
 Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title, unassigned.txt
 Writes synapse/{repo}/_index.json in the vault
@@ -35,7 +35,7 @@ list per node, then reports coverage. Step 1 of a scripted /synapse-init.
 
 ```
 Usage: synapse-build-lists.sh [--reenumerate]
-  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
   Never the script's own location, and never the repo -- see below.
 
 Reads   $SYNAPSE_WORK_DIR/manifest.tsv   title <TAB> include-ERE <TAB> exclude-ERE
@@ -59,7 +59,7 @@ Step 4 (last) of a scripted /synapse-init.
 
 ```
 Usage: synapse-build-project-index.sh
-  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 
 Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (for titles and file counts)
        each node's `summary` frontmatter field, fetched from the vault
@@ -71,6 +71,32 @@ its own -- see docs/synapse-graph.md for why.
 Note for agent callers: needs the sandbox disabled (localhost REST API).
 ```
 
+## `synapse-identity.sh`
+
+Sourced by every component that has to name a Synapse namespace. One copy on
+purpose: synapse-staleness.sh already carried a comment warning that a
+divergent resolution chain makes one component refuse where another proceeds,
+and that warning applied to five inline copies of the same logic. This is that
+chain, once.
+A namespace is keyed by repo AND branch -- `synapse/{repo}@{branch}/` -- so the
+graph describes one tree rather than every branch at once. Worktrees need no
+handling of their own: git refuses to check out one branch in two worktrees of
+a repository (the main checkout included), so a branch already names at most
+one checkout. That is why there is no `.git`-file parsing here, no `gitdir:` or
+`commondir` walking, and no worktree-versus-submodule discrimination -- the
+whole question reduces to which branch is checked out.
+Usage (sourced, never executed):
+  . "$HOME/.claude/bin/synapse-identity.sh"
+  REMOTE="$(synapse_remote "$REPO_ROOT")"           # identity, unchanged chain
+  NS="$(synapse_namespace "$REPO_ROOT")" || ...     # "{repo}@{branch}"
+Deliberately does NOT `set -euo pipefail`: a sourced file that sets shell
+options silently rewrites its caller's error handling. Every git call below is
+guarded instead, so these stay safe under a caller that does set them -- which
+all the hooks do.
+
+```
+```
+
 ## `synapse-push-nodes.sh`
 
 Writes every node that has both a path list and an authored body. Step 2 of a
@@ -78,7 +104,7 @@ scripted /synapse-init.
 
 ```
 Usage: synapse-push-nodes.sh [NN ...]      (default: every staged or authored node)
-  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo-name}/.
+  Work dir: $SYNAPSE_WORK_DIR, default ~/.claude/synapse-work/{repo}@{branch}/.
 
 Reads  $SYNAPSE_WORK_DIR/lists/NN.txt + NN.title   (from synapse-build-lists.sh)
        $SYNAPSE_WORK_DIR/b-NN.md                   (authored per node, see below)

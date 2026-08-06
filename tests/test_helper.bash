@@ -43,6 +43,13 @@ EOF
   # boilerplate list, not a hand-copied duplicate that could drift from it.
   cp "$REPO_ROOT/claude/synapse-module-boilerplate.conf.template" \
     "$HOME/.claude/synapse-module-boilerplate.conf"
+
+  # Installed for every test rather than per-file, because every component
+  # sources it to name a namespace -- a component that could not find it would
+  # fall back to no identity at all, which is the failure this library exists to
+  # remove. Copied rather than symlinked so a test cannot edit the repo's copy.
+  mkdir -p "$HOME/.claude/bin"
+  cp "$REPO_ROOT/claude/bin/synapse-identity.sh" "$HOME/.claude/bin/synapse-identity.sh"
 }
 
 # In-place sed that works on both BSD and GNU. `sed -i ''` is BSD-only (GNU reads
@@ -94,8 +101,19 @@ make_repo() {
   fi
 }
 
+# The namespace directory name for $REPO -- "{repo}@{branch}", not a bare repo
+# name. Kept under the old name because fourteen test files build vault and
+# work-dir paths through it, and the point is that they keep doing so: a test
+# that hardcoded the key instead would pass while the components disagreed.
+#
+# Deliberately delegates to the shipped resolver rather than reimplementing the
+# derivation. A test helper with its own copy of the rule could agree with a
+# wrong implementation -- the same reasoning that keeps `sources_digest` out of
+# the helpers and recomputed in Python instead.
 repo_name() {
-  basename "$REPO"
+  # shellcheck source=/dev/null
+  . "$HOME/.claude/bin/synapse-identity.sh"
+  synapse_namespace "$REPO"
 }
 
 repo_remote_or_path() {

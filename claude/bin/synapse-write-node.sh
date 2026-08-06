@@ -115,17 +115,17 @@ BASE="https://127.0.0.1:$PORT"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -n "$REPO_ROOT" ]] || { echo "synapse-write-node: not inside a git repo" >&2; exit 1; }
-REPO_NAME="$(basename "$REPO_ROOT")"
+
+# "{repo}@{branch}", not a bare repo name -- see synapse-identity.sh.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || {
+    echo "synapse-write-node: synapse-identity.sh not installed (run setup.sh)" >&2; exit 1; }
+REPO_NAME="$(synapse_namespace "$REPO_ROOT")" || exit 1
 
 # Same origin -> first-remote -> repo-root resolution the SessionStart hook,
 # synapse-staleness.sh and synapse-query.sh use. It must match exactly, or a repo
 # without an `origin` compares unequal against its own namespace.
-REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [[ -z "$REMOTE" ]]; then
-    first_remote="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-    [[ -n "$first_remote" ]] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$first_remote" 2>/dev/null || true)"
-fi
-[[ -n "$REMOTE" ]] || REMOTE="$REPO_ROOT"
+REMOTE="$(synapse_remote "$REPO_ROOT")"
 
 # Explicit template: macOS `mktemp -d` with no template ignores TMPDIR and uses
 # the per-user /var/folders dir, which a sandboxed caller cannot write.

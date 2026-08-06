@@ -293,16 +293,22 @@ stage_index() { # stage_index <node.md> <path>...
   # The real scenario, and the ordering matters: the release branch forks *before*
   # the commit the node was built at, so the baseline is not on this checkout's line.
   # Branching from the baseline itself would leave it an ancestor and prove nothing.
-  local main fork; main="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"; fork="$(git_head)"
+  local fork; fork="$(git_head)"
   printf 'class A { int mainline; }\n' > "$REPO/mod-a/a.java"
   commit_all mainline-work
   local base; base="$(git_head)"
   stage_node "Mod A" "$base" mod-a/a.java mod-a/b.java
   stage_index "Mod A.md" mod-a/a.java mod-a/b.java
 
-  git -C "$REPO" checkout -q -b release "$fork"
+  # Diverge without leaving the branch. A namespace belongs to one branch, so
+  # checking another one out has no namespace at all rather than a divergent
+  # baseline -- that case is covered separately. Resetting to the fork point and
+  # committing elsewhere reproduces the identical topology (the recorded baseline
+  # is no longer an ancestor of HEAD) on the branch the graph actually describes,
+  # which is what a rebase or a reset does in real use.
+  git -C "$REPO" reset --hard -q "$fork"
   git -C "$REPO" rm -q mod-a/b.java
-  commit_all release-only
+  commit_all diverged-line
   ! git -C "$REPO" merge-base --is-ancestor "$base" HEAD
 
   run run_drift
@@ -314,7 +320,26 @@ stage_index() { # stage_index <node.md> <path>...
   [[ "$output" != *"commits since baseline"* ]]
   # The tree diff is still correct and useful: b.java genuinely is not here.
   [[ "$output" == *"Mod A	1 of its files are gone"* ]]
-  git -C "$REPO" checkout -q "$main"
+}
+
+@test "on a branch with no namespace, drift says so rather than reporting clean" {
+  # The other half of the per-branch model, and the one that must not be silent:
+  # a namespace describes one branch, so another branch has none. Exit 1 is
+  # "could not run", never "clean" -- silence here would read as a graph that
+  # matches, which is the conflation the keying exists to remove.
+  make_two_area_repo
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  local base; base="$(git_head)"
+  stage_node "Mod A" "$base" mod-a/a.java
+  stage_index "Mod A.md" mod-a/a.java
+
+  run run_drift
+  [ "$status" -eq 0 ]
+
+  git -C "$REPO" checkout -q -b some-other-branch
+  run run_drift
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"is not an ancestor of HEAD"* ]]
 }
 
 @test "one diff per distinct baseline, not one per node" {

@@ -198,21 +198,23 @@ drift() { in_repo "$BIN/synapse-query.sh" drift; }
   [ "$output" -eq 23 ]
 }
 
-@test "a branch switch that removes a module leaves an empty list, and nothing is written" {
+@test "a diverged line that removes a module leaves an empty list, and nothing is written" {
   make_project
   build_namespace
   local fork; fork="$(git -C "$REPO" rev-parse HEAD)"
-  local main; main="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
 
-  # Mainline gains a commit after the fork point, so the recorded baseline is not
-  # an ancestor of the release branch -- the real branch-switch topology.
+  # The line gains a commit after the fork point, so the recorded baseline ends up
+  # off the line HEAD is on -- the divergent-baseline topology. Produced by a reset
+  # rather than a branch switch: a namespace belongs to one branch, so checking
+  # another one out has no namespace at all instead of a stale one, and a rebase or
+  # reset is what actually reaches this state now.
   printf 'class alpha1 { int v = 2; }\n' > "$REPO/mod-alpha/src/main/java/alpha1.java"
   commit_all mainline
   build_namespace
 
-  git -C "$REPO" checkout -q -b release "$fork"
+  git -C "$REPO" reset --hard -q "$fork"
   git -C "$REPO" rm -rq mod-gamma
-  commit_all release-drops-gamma
+  commit_all line-drops-gamma
 
   run drift
   [ "$status" -eq 0 ]
@@ -236,7 +238,6 @@ drift() { in_repo "$BIN/synapse-query.sh" drift; }
   run in_repo "$BIN/synapse-push-nodes.sh" 03
   [ "$status" -eq 1 ]
   [[ "$output" == *"03	SKIP (no list/title)"* || "$output" == *"03	FAILED"* ]]
-  git -C "$REPO" checkout -q "$main"
 }
 
 @test "the loop closes: after rebuilding every flagged node, drift goes silent" {

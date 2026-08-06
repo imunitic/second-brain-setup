@@ -34,21 +34,21 @@ FILE="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_response.fi
 
 REPO_ROOT="$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || exit 0
-REPO_NAME="$(basename "$REPO_ROOT")"
 
-# A namespace is keyed by directory basename, so two unrelated repos sharing
-# one would otherwise write into each other's graph. The SessionStart hook and
-# synapse-query.sh both refuse on a remote mismatch; this is the write side of
-# the same check, and it must resolve the remote *identically* to them --
-# origin, then the first listed remote, then the repo root for a repo with no
-# remote at all. A different chain here means one component refuses where
-# another proceeds, which is worse than either behaviour on its own.
-REMOTE="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [ -z "$REMOTE" ]; then
-  FIRST_REMOTE="$(git -C "$REPO_ROOT" remote 2>/dev/null | head -1 || true)"
-  [ -n "$FIRST_REMOTE" ] && REMOTE="$(git -C "$REPO_ROOT" remote get-url "$FIRST_REMOTE" 2>/dev/null || true)"
-fi
-[ -n "$REMOTE" ] || REMOTE="$REPO_ROOT"
+# A namespace is keyed by repo and branch, so two unrelated repos -- or two
+# branches of one -- never write into each other's graph. The SessionStart hook
+# and synapse-query.sh both refuse on a mismatch; this is the write side of the
+# same check, and it has to resolve identity *identically* to them, or one
+# component refuses where another proceeds. That used to be a comment asking
+# five copies to stay in step; it is now one shared implementation.
+#
+# Sourced, not exec'd, and a missing library exits 0 rather than 1: a hook that
+# errors out is worse than one that quietly does nothing.
+# shellcheck source=/dev/null
+. "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || exit 0
+REMOTE="$(synapse_remote "$REPO_ROOT")"
+# A detached HEAD has no branch and therefore no namespace -- nothing to flag.
+REPO_NAME="$(synapse_namespace "$REPO_ROOT" 2>/dev/null)" || exit 0
 
 # Read the namespace's own Index.md from disk rather than over REST: this is a
 # read, $VAULT is already known and checked above, and it keeps the guard ahead
