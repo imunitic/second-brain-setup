@@ -101,6 +101,16 @@ blocks.
   `synapse-orientation`, which is why it exits 0. `--lists` keys the same output by *cluster* instead
   of by directory, which is what `synapse-gate.sh` scores: a cluster is not generally a union of
   directories, so its vocabulary cannot be derived from the directory-keyed table afterwards.
+- `claude/bin/synapse-rank.sh` — decides what is worth *reading* when authoring a node, in three
+  tiers. Code ranks by **definitions per KB**: raw counts put generated tables and wide accessor
+  classes first, and normalising by size moved a known crux from rank 17 to 7 of 574 on a real node.
+  A declarative file ranks its **consumer** instead of itself — a declaration carries little meaning,
+  the code binding it carries the domain verbs — resolved by stem plus module prefix, because generic
+  stems (`Adresse`, `NatPerson`) match dozens of unrelated classes without the module constraint.
+  Everything else scores zero. What counts as declarative is *derived*, not listed: a non-code file
+  whose stem prefixes a code file's stem in the same module. Shipping a list of extensions would have
+  meant shipping one project's vocabulary as if it were universal. Coverage is untouched — `sources`
+  stays exhaustive, and this only sets reading order.
 - `claude/bin/synapse-gate.sh` — the one quality check `/synapse-init` never had. Coverage was
   already provable by regex expansion plus `comm`; whether a cluster corresponds to a *concept* was
   judgment, discovered only when someone tried to write its summary and found nothing to say. Reads
@@ -254,7 +264,9 @@ fake `tree-sitter` emitting the symbols a fixture authored as `symbol:` lines so
 assertion is about the reduction rather than about the stub), `synapse-gate.sh` (the flag boundary
 pinned in both directions, document frequency counted across clusters rather than within one, and
 the threshold's floor and scaling — against hand-written vocabulary tables, since what the gate
-decides is separable from how the counts were obtained), and the five node-building
+decides is separable from how the counts were obtained), `synapse-rank.sh` (size normalisation
+asserted in both directions, definitions distinguished from references, and the module constraint on
+the consumer hop), and the five node-building
 scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
 four-step build against a throwaway repo and reads the result back through `synapse-query.sh`.
 

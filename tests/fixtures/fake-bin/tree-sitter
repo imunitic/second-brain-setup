@@ -31,11 +31,18 @@ emit_tags() { # emit_tags <path>
   fi
   printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
   [ -f "$p" ] || return 0
+  # `symbol:` is a definition, `ref:` a reference. The distinction matters to
+  # synapse-rank.sh, which ranks by definitions per KB: a reference says the
+  # file USES something, a definition says it DECLARES it, and only the second
+  # is evidence of what a subsystem is.
   while IFS= read -r line; do
     case "$line" in
       symbol:*) name="${line#symbol:}"
                 [ -n "$name" ] || continue
                 printf '%s\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' "$name" ;;
+      ref:*)    name="${line#ref:}"
+                [ -n "$name" ] || continue
+                printf '%s\t | call\tref (0, 0) - (0, 1) `fake source line`\n' "$name" ;;
     esac
   done < "$p"
 }

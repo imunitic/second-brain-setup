@@ -299,6 +299,67 @@ Exit codes:
   2 - usage error (unknown subcommand, bad flag, unsupported field)
 ```
 
+## `synapse-rank.sh`
+
+Ranks a node's sources by how much they are worth READING when authoring its
+prose. Decides reading order only: `sources` stays exhaustive, so coverage,
+staleness and vault search are all unaffected by anything here. See
+docs/synapse-graph.md's "Orientation from vocabulary" section.
+
+```
+Usage: synapse-rank.sh --sources <file> [--repo <path>] [--top N] [--tier T]
+  --sources  file of repo-relative paths, one per line -- a node's `sources`,
+             or synapse-build-lists.sh's lists/NN.txt.
+  --repo     default: the git toplevel containing $PWD.
+  --top      lines per tier, default 10. `--top 0` prints every ranked file.
+  --tier     restrict output to `code` or `dsl`. Default: both.
+
+Prints `tier <TAB> score <TAB> path`, ranked within each tier, code first.
+Counts per tier go to stderr, so a node whose files all scored zero is a
+number rather than an empty answer.
+
+THREE TIERS, because "relevant" means different things per kind of file.
+
+  code    definitions per KB. NOT raw definition counts: those rank generated
+          constant tables first, which is the opposite of useful. Normalising
+          by size moved a known crux from rank 17 to rank 7 of 574 on a real
+          node. Definitions specifically, not all tags -- a reference says the
+          file USES something, a definition says it DECLARES it, and a summary
+          is made of what a subsystem declares.
+
+  dsl     a declarative file carries little meaning on its own; the code that
+          consumes it carries the domain verbs. So the CONSUMER is what gets
+          ranked, scored by how many declarations it serves. Resolved by stem
+          plus module prefix, never by parsing.
+
+  ignore  everything else -- config, data, docs, generated output. Scored
+          zero and omitted from the ranking, still fully covered by `sources`.
+
+WHAT COUNTS AS DSL IS DERIVED, NOT LISTED. A non-code file is a declaration
+exactly when some code file in the same module has a stem starting with its
+own -- `Adresse.domvo` resolving to `Adresse.java`, `Kunde.gui` to
+`KundeController.java`. Shipping a list of extensions instead would have meant
+shipping one project's vocabulary (`.gui`, `.domvo`, `.bo`, `.paramvo`) as if
+it were universal, and this toolkit is meant to be language-agnostic with no
+per-repo curation.
+
+THE MODULE PREFIX IS LOAD-BEARING, not a tie-breaker. Generic stems -- the
+measured examples were `Adresse` and `NatPerson` -- match dozens of unrelated
+classes across a large repo, so a stem-only hop resolves to whichever one
+sorts first and is worse than no answer. Constraining to the declaration's own
+module is what makes the hop mean anything.
+
+Consumers are searched repo-wide rather than within `sources`: the code that
+uses a node's declarations is frequently the reason to read it, and is not
+always a file the node itself owns.
+
+Exit codes:
+  0 - ran. Empty output means nothing scored above zero, which for a node made
+      entirely of config is the correct answer, not a failure.
+  1 - could not run (not a git repo, unreadable sources, no synapse-tags.sh)
+  2 - usage error
+```
+
 ## `synapse-tags-cache.sh`
 
 Keeps a project's synapse-tags.sh output cache current for a given set of
