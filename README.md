@@ -212,3 +212,7 @@ instead.
 `jq`, `bats-core` (tests only), the `claude` CLI. Optional: `tree-sitter` CLI plus a C compiler for
 the Graph's tree-sitter acceleration (`synapse-tags.sh`) — everything degrades gracefully to
 full-read behaviour if either is missing, so neither is a hard requirement.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
