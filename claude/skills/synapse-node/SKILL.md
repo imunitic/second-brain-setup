@@ -155,10 +155,12 @@ needs one.
 
      Empty → nothing to do, skip silently (an empty sweep isn't worth announcing).
    - Otherwise read `synapse/{project}/Index.md` for the current node list (titles + summaries).
-   - For each unassigned path, try `~/.claude/bin/synapse-tags.sh {path}` first as a fast
-     pre-classification signal (same exit-code handling as Regeneration above), falling back to a
-     full read for ambiguous cases, then classify against that node list. **The judgment is which
-     cluster a path belongs to; the bookkeeping is not yours to do:**
+   - Tag the whole bucket in **one** call — write the paths to a list and run
+     `~/.claude/bin/synapse-tags.sh --paths {list}`, whose output is attributable (an unindented
+     line is a path, the tab-indented lines under it are its tags). A per-file loop costs ~33× more
+     for the same answer. Fall back to a full read for ambiguous cases, then classify against that
+     node list. **The judgment is which cluster a path belongs to; the bookkeeping is not yours to
+     do:**
      - **Fits an existing node** → widen that node's line in `$W/manifest.tsv` so the pattern claims
        it, then re-run `synapse-build-lists.sh`. Set that node's `stale: true` for its own next read
        rather than regenerating it now — only the node that triggered step 4 is regenerated

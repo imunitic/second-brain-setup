@@ -195,12 +195,15 @@ file in the explorer that nothing here is hand-edited. Dotfiles would hide these
 explorer too, but that hides them from *you* as well, and some sync tools skip them — a poor trade for
 a file whose whole purpose is surviving to another machine.
 
-The one place this bites: `synapse-tags.sh` runs one file per invocation (~0.07s warm), so it cannot
-be swept across a large cluster — 15k files is ~18 minutes. Any use of it needs a sampling rule, and
-every fixed rule is biased (alphabetical is an accident, largest-file favours generated code,
+**Sampling used to be required here, and no longer is.** `synapse-tags.sh` ran one file per
+invocation (~0.07s warm), which put a 15k-file cluster at ~18 minutes and a whole repo out of
+reach — so any use of it needed a sampling rule, and every fixed rule was biased in a way that had
+to be chosen and defended (alphabetical is an accident, largest-file favours generated code,
 "under `api/`" bakes in a naming convention the repo may not share, most-referenced needs the full
-scan being avoided). `/synapse-init` therefore requires stating the rule chosen, or skipping that
-question — a truncated symbol list looks authoritative and is worthless.
+scan being avoided). `--paths` removed the cost that forced the choice: one invocation for a whole
+list measured 33× on 200 files, and `synapse-vocab.sh` now covers 98k code files in ~51s. There is
+no sampling rule anywhere in the pipeline, and reaching for one is a sign of running the wrong
+command.
 
 ### `sources` is a machine field; `## Sources` is its human mirror
 

@@ -84,8 +84,10 @@ Check whether `synapse/{repo}@{branch}/Index.md` exists (`mcp__obsidian__vault_l
 language-agnostic, and already implemented as a tested script — or *interpretation*, which is
 yours and cannot be scripted because what counts as signal differs per codebase.
 
-- **Mechanics (do not reimplement inline):** `synapse-build-lists.sh` (enumerate + expand a
-  manifest + prove coverage), `synapse-write-node.sh` (hash, digest, `## Sources` mirror, PUT),
+- **Mechanics (do not reimplement inline):** `synapse-vocab.sh` (repo → per-group symbol
+  vocabulary), `synapse-build-lists.sh` (enumerate + expand a manifest + prove coverage),
+  `synapse-gate.sh` (flag clusters that own no vocabulary), `synapse-rank.sh` (which files are
+  worth reading), `synapse-write-node.sh` (hash, digest, `## Sources` mirror, PUT),
   `synapse-push-nodes.sh`, `synapse-build-index.sh`, `synapse-build-project-index.sh`.
 
 **The work directory** defaults to `~/.claude/synapse-work/{repo}@{branch}/`, created on demand, and
@@ -126,13 +128,21 @@ emit into tool calls than read into a window. Never hand-author those.
    and should diverge from them if the files themselves disagree. No other project-specific doc
    convention (e.g. a `docs/design/` folder) gets this treatment — see the design note's
    Alternatives for why that was rejected.
-3. **Orientation pass — interpretation, and the step nothing can do for you.** The goal is not a
-   summary of every file; it is learning *where meaning lives in this particular tree* well enough to
-   cluster it and then write about it.
+3. **Orientation pass — the evidence is mechanical, the reading of it is yours.** Run
+   `synapse-vocab.sh`. It writes `groupwords.tsv` (`group ⇥ word ⇥ count`) and `counts.tsv`
+   (`group ⇥ file count`) into the work directory, covering every file that has a grammar — the
+   whole of syrius3, 125,351 files, in ~51 seconds. Read those two tables instead of exploring the
+   tree.
 
-   **Load the `synapse-orientation` skill** for the four questions to ask, in order, and the cheap
-   commands that answer each. It is shared with `/synapse-rebuild`'s re-orient class, which needs the
-   same technique.
+   What is *not* mechanical, and is the actual work: deciding which words are **distinctive**
+   rather than merely frequent. A word in every group is background; a word in two is a concept.
+
+   An empty `groupwords.tsv` means no file here had a usable grammar. That is a supported state, not
+   an error — fall back to the four questions in the skill below.
+
+   **Load the `synapse-orientation` skill** for how to read the vocabulary, the four questions that
+   cover a tree with no grammar, and the grammar-discovery procedure. It is shared with
+   `/synapse-rebuild`'s re-orient class, which needs the same technique.
 4. **Cluster into nodes — write `manifest.tsv`, the seam.** Group what you learned into a few dozen
    readable nodes, not one per file — same density Graft aims for. A node is a subsystem or concept,
    not a file; a file may legitimately belong to more than one node's `sources` when it's genuinely
@@ -157,16 +167,52 @@ emit into tool calls than read into a window. Never hand-author those.
    the namespace later should start from it rather than re-deriving the clustering. Copying it to
    `synapse/{repo}@{branch}/_manifest.tsv` alongside `_index.json` is worth doing for any repo you
    expect to revisit.
-5. **Write each node.** Author the prose only — put each node's content in
+5. **Gate the clusters — before paying to author any prose.** Coverage was already provable in step
+   4; cluster *quality* was not, and a bad cluster used to be discovered only when someone tried to
+   write its summary and found there was nothing to say.
+
+   ```
+   synapse-vocab.sh --lists "$SYNAPSE_WORK_DIR/lists"   # re-key the vocabulary by CLUSTER
+   synapse-gate.sh  --vocab "$SYNAPSE_WORK_DIR/groupwords.tsv"
+   ```
+
+   The second run of `synapse-vocab.sh` is not redundant. A cluster is generally *not* a union of
+   directories, so cluster vocabulary cannot be derived from the directory-keyed table of step 3;
+   the extra tagging pass (~51s on a very large repo) buys exactness. Note it overwrites
+   `groupwords.tsv`/`counts.tsv` — pass `--out` if you want to keep the directory-keyed pair.
+
+   Empty output means every cluster is differentiated; go on to step 6. Each line printed is a
+   cluster whose top eight terms are nearly all corpus-common, i.e. it owns no vocabulary of its
+   own. **Re-cluster or disperse those before authoring** — merge into a neighbour, split along a
+   distinction the vocabulary actually shows, or drop the line and let its files land in a better
+   node. Then re-run `synapse-build-lists.sh` and the gate.
+
+   A flag is advice, never a hard stop, and there is one case where the right answer is to override
+   it: a cluster whose code is in a language with **no tree-sitter grammar** produces no vocabulary,
+   which is indistinguishable from owning none. If that is why it was flagged, leave it alone and say
+   so.
+6. **Write each node.** Author the prose only — put each node's content in
    `$SYNAPSE_WORK_DIR/b-NN.md` (matching its `lists/NN.txt`), then run `synapse-push-nodes.sh`,
    which calls `synapse-write-node.sh` per node.
+
+   **Do not choose which files to read by judgment.** Ask:
+
+   ```
+   synapse-rank.sh --sources "$SYNAPSE_WORK_DIR/lists/NN.txt" --pool summary
+   synapse-rank.sh --sources "$SYNAPSE_WORK_DIR/lists/NN.txt" --pool crux
+   ```
+
+   Read the top few of each, not the list — on a real node a summary authored from 3 files out of
+   809 matched the hand-written one. The two pools differ deliberately: a summary is made of *names*
+   so it keeps test classes and DSL consumers, while a crux is concentrated logic so it excludes
+   tests. Both leave `sources` exhaustive; this is reading order only.
 
    **Load the `synapse-node-format` skill before writing the first one.** It is the single
    description of the node contract — summary, the crux *pointer*, `## Links`, `grounded_in`, what
    the writer adds and what it refuses — shared with the `synapse-node` skill and `/synapse-rebuild`,
    which write the same artifact. Do not re-derive the format from an existing node: a node you are
    reading may predate a change to it.
-6. **Write `_index.json`** — mechanics, run `synapse-build-index.sh`. It emits
+7. **Write `_index.json`** — mechanics, run `synapse-build-index.sh`. It emits
    `synapse/{repo}@{branch}/_index.json`, mapping every source path used
    above to the list of node **filenames, including the `.md` extension** (matching the design
    note's schema exactly, since the `PostToolUse` hook and the read-time procedure both use this
@@ -184,7 +230,7 @@ emit into tool calls than read into a window. Never hand-author those.
    }
    ```
 
-7. **Write `synapse/{repo}@{branch}/Index.md`** — mechanics, run `synapse-build-project-index.sh`. It
+8. **Write `synapse/{repo}@{branch}/Index.md`** — mechanics, run `synapse-build-project-index.sh`. It
    takes no prose from you at all: each bullet's headline is read back from that node's `summary`
    frontmatter field, and the script computes the exact file count, the sanitized wikilink filename
    and the `remote` field. Bullets come out sorted by title. Run it only after the nodes exist — it
@@ -233,10 +279,12 @@ existing nodes.
 1. Read `synapse/{repo}@{branch}/_index.json`'s `_unassigned` array. Empty → report "Nothing
    unassigned, nothing to do" and stop.
 2. Read `synapse/{repo}@{branch}/Index.md` for the current node list (titles + summaries).
-3. For each unassigned path: try `~/.claude/bin/synapse-tags.sh {path}` first (same exit-code
-   handling as the first-time build's per-file pass above) as a fast pre-classification signal,
-   falling back to a full read for genuinely ambiguous cases. Classify against the existing node
-   list.
+3. Tag them **in one call, not one per file**: write the unassigned paths to a list and run
+   `~/.claude/bin/synapse-tags.sh --paths {list}`. Output is attributable — an unindented line is a
+   path, the tab-indented lines under it are that path's tags — so one invocation classifies the
+   whole sweep. A per-file loop here costs ~33× more for the same answer, and `_unassigned` on a
+   large repo is not a short list. Fall back to a full read only for genuinely ambiguous cases.
+   Classify against the existing node list.
    - **Fits an existing node** → append it (path + fresh `git hash-object`) to that node's
      `sources` in frontmatter, and set that node's `stale: true` (it now covers a file it hasn't
      summarized yet — its own next read regenerates it, this step does not regenerate it
