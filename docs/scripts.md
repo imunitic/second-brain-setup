@@ -204,16 +204,17 @@ a repository (the main checkout included), so a branch already names at most
 one checkout. That is why there is no `.git`-file parsing here, no `gitdir:` or
 `commondir` walking, and no worktree-versus-submodule discrimination -- the
 whole question reduces to which branch is checked out.
+
+```
 Usage (sourced, never executed):
   . "$HOME/.claude/bin/synapse-identity.sh"
   REMOTE="$(synapse_remote "$REPO_ROOT")"           # identity, unchanged chain
   NS="$(synapse_namespace "$REPO_ROOT")" || ...     # "{repo}@{branch}"
+
 Deliberately does NOT `set -euo pipefail`: a sourced file that sets shell
 options silently rewrites its caller's error handling. Every git call below is
 guarded instead, so these stay safe under a caller that does set them -- which
 all the hooks do.
-
-```
 ```
 
 ## `synapse-push-nodes.sh`

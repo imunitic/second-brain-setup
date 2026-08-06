@@ -53,6 +53,60 @@ GEN="$REPO_ROOT/docs/generate-scripts-reference.sh"
   [ "$(grep -c '^```$' "$scratch/docs/scripts.md")" -eq "$((expected * 2))" ]
 }
 
+@test "no fenced block in the reference is empty" {
+  # Counting fences is not enough, and that gap shipped a broken page: an empty
+  # block still opens and closes, so the pairing check above was satisfied by a
+  # section whose help text had silently gone missing.
+  run awk '
+    /^```$/ { if (!inf) { inf = 1; n = 0 } else { inf = 0; if (n == 0) empty++ }; next }
+    inf { n++ }
+    END { print empty + 0 }
+  ' "$REPO_ROOT/docs/scripts.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+}
+
+@test "a Usage line with a parenthetical is still extracted" {
+  # The exact break: the marker was `^# Usage:` and synapse-identity.sh says
+  # `# Usage (sourced, never executed):` -- it is sourced rather than run, so the
+  # parenthetical is real information. A marker that misses produces TWO silent
+  # defects, so both are asserted: the usage lines must be inside the fence, and
+  # must NOT have been absorbed into the prose above it.
+  local section
+  section="$(awk '/^## `synapse-identity.sh`/ { p = 1; next }
+                  p && /^## `/ { exit } p' "$REPO_ROOT/docs/scripts.md")"
+
+  [[ "$section" == *'Usage (sourced, never executed):'* ]]
+  # Inside the fence: everything before the opening ``` is prose.
+  local prose
+  prose="$(awk '/^```$/ { exit } { print }' <<< "$section")"
+  [[ "$prose" != *"Usage"* ]]
+  [[ "$prose" != *'synapse_namespace'* ]]
+}
+
+@test "a header with no Usage line fails the generator instead of emitting an empty block" {
+  local scratch="$BATS_TEST_TMPDIR/nousage"
+  mkdir -p "$scratch"
+  cp -R "$REPO_ROOT/docs" "$REPO_ROOT/claude" "$scratch/"
+
+  run bash "$scratch/docs/generate-scripts-reference.sh"
+  [ "$status" -eq 0 ]
+
+  # Strip the marker from one script's header.
+  perl -0pi -e 's/^# Usage: synapse-build-index\.sh$/# Invocation: synapse-build-index.sh/m' \
+    "$scratch/claude/bin/synapse-build-index.sh"
+
+  run bash "$scratch/docs/generate-scripts-reference.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"synapse-build-index.sh"* ]]
+  [[ "$output" == *"no '# Usage' line"* ]]
+
+  # And --check refuses too, rather than reporting a stale doc for the wrong reason.
+  run bash "$scratch/docs/generate-scripts-reference.sh" --check
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no '# Usage' line"* ]]
+}
+
 @test "the generated help matches what the script itself prints" {
   # The whole reason to generate rather than hand-write: --help and the reference
   # come from one block, so they cannot disagree.

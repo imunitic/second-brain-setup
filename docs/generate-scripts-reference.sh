@@ -9,14 +9,30 @@
 #
 # The header block is the same text each script prints for --help, so there is one
 # source of truth rather than a doc that has to be remembered. Extraction stops at
-# the first non-comment line: the block runs from `# Usage:` to `set -e`.
+# the first non-comment line: the block runs from the `# Usage` line to `set -e`.
 #
-# Exit codes: 0 ok (or up to date), 1 out of date with --check, 2 usage error
+# THE MARKER IS `^# Usage`, NOT `^# Usage:`, and the difference already cost a
+# broken page. A header cannot find the marker produces TWO defects at once, both
+# of which render as perfectly plausible markdown: the prose pass never stops, so
+# the usage lines are absorbed into the paragraph, and the help pass never starts,
+# so the fence comes out empty. `synapse-identity.sh` says
+# `# Usage (sourced, never executed):` -- it is sourced rather than run, so the
+# parenthetical is real information -- and against a `^# Usage:` marker it
+# rendered exactly that way. A missing marker is now a hard error rather than a
+# quietly malformed section; see `validate` below.
+#
+# Exit codes: 0 ok (or up to date), 1 out of date with --check or a header the
+# marker cannot find, 2 usage error
 set -euo pipefail
 
 readonly HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BIN="$HERE/../claude/bin"
 readonly OUT="$HERE/scripts.md"
+
+# Defined once and shared by both extraction passes. They must agree: when they
+# disagree the output is malformed rather than absent, which is why this is a
+# variable and not the same regex typed twice.
+readonly USAGE_RE='^# Usage'
 
 check_only=false
 case "${1:-}" in
@@ -25,7 +41,23 @@ case "${1:-}" in
     *) awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2; exit 2 ;;
 esac
 
-# The one-line purpose is the comment above `# Usage:`; the rest is the help text.
+# Every script must yield a non-empty help block. Checked before anything is
+# written, and named per script, because the failure this guards is silent: an
+# empty fence and a swallowed paragraph both look like ordinary output.
+validate() {
+    local f name n bad=0
+    for f in "$BIN"/*.sh; do
+        name="$(basename "$f")"
+        n="$(awk -v re="$USAGE_RE" '$0 ~ re { p = 1 } p && !/^#/ { exit } p { print }' "$f" | wc -l | tr -d ' ')"
+        if [[ "$n" -eq 0 ]]; then
+            echo "generate-scripts-reference: $name has no '# Usage' line in its header block" >&2
+            bad=1
+        fi
+    done
+    return "$bad"
+}
+
+# The one-line purpose is the comment above the `# Usage` line; the rest is help text.
 render() {
     cat <<'EOF'
 # Synapse Tools: script reference
@@ -43,12 +75,14 @@ EOF
     for f in "$BIN"/*.sh; do
         name="$(basename "$f")"
         printf '## `%s`\n\n' "$name"
-        awk '/^# Usage:/ { exit } !/^#/ { exit } NR > 1 && !/^#$/ { sub(/^# ?/, ""); print }' "$f"
+        awk -v re="$USAGE_RE" '$0 ~ re { exit } !/^#/ { exit } NR > 1 && !/^#$/ { sub(/^# ?/, ""); print }' "$f"
         printf '\n```\n'
-        awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$f"
+        awk -v re="$USAGE_RE" '$0 ~ re { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$f"
         printf '```\n\n'
     done
 }
+
+validate || exit 1
 
 if [[ "$check_only" == true ]]; then
     if [[ ! -f "$OUT" ]]; then
