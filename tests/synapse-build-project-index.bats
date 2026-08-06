@@ -87,7 +87,10 @@ index_file() { echo "$VAULT/synapse/$(repo_name)/Index.md"; }
   local f; f="$(index_file)"
   grep -q "^title: \"$(repo_name) — Synapse index\"\$" "$f"
   grep -q '^node_type: synapse-index$' "$f"
-  grep -q "^project: $(repo_name)\$" "$f"
+  # project and branch are the two halves of the namespace key, recorded
+  # separately: the combined form is already the title and the directory name.
+  grep -q "^project: $(ns_repo)\$" "$f"
+  grep -q "^branch: $(ns_branch)\$" "$f"
   grep -q '^remote: "ssh://git@example.com/x/proj.git"$' "$f"
   grep -qE '^built_at: "[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}"$' "$f"
 }

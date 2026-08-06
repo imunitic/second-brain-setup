@@ -140,7 +140,12 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
     echo '---'
     printf 'title: "%s — Synapse index"\n' "$REPO_NAME"
     echo 'node_type: synapse-index'
-    printf 'project: %s\n' "$REPO_NAME"
+    # `project` is the repo half alone, not the "{repo}@{branch}" key: the key is
+    # already the title and the folder name, and a bare repo is what groups every
+    # branch's namespace together in a vault query. The branch gets its own field
+    # so identity is checkable without parsing a directory name.
+    printf 'project: %s\n' "$(synapse_repo_name "$REPO_ROOT")"
+    printf 'branch: %s\n' "$(synapse_branch "$REPO_ROOT")"
     printf 'remote: "%s"\n' "$REMOTE"
     printf 'built_at: "%s"\n' "$built_at"
     echo '---'

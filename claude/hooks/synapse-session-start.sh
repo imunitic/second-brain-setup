@@ -18,6 +18,7 @@ INDEX="${OBSIDIAN_VAULT_DIR:-}/Index.md"
 LABEL="Synapse Vault index"
 
 SYNAPSE_LINE=""
+NS_ABSENT=""
 CATALOGUE_BLOCK=""
 if [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
   INPUT="$(cat)"
@@ -40,10 +41,18 @@ if [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
     if [ -f "$SYNAPSE_INDEX" ]; then
       EXISTING_REMOTE="$(grep -m1 '^remote:' "$SYNAPSE_INDEX" | sed -e 's/^remote: *//' -e 's/^"//' -e 's/"$//')"
       if [ "$EXISTING_REMOTE" = "$REMOTE" ]; then
-        SYNAPSE_LINE="Synapse namespace for this repo: synapse/$REPO_NAME/Index.md -- consult it for existing code-graph nodes before re-exploring from scratch."
+        SYNAPSE_LINE="Synapse namespace for this repo and branch: synapse/$REPO_NAME/Index.md -- consult it for existing code-graph nodes before re-exploring from scratch."
       else
-        SYNAPSE_LINE="Synapse namespace synapse/$REPO_NAME/ exists but its remote (\"$EXISTING_REMOTE\") doesn't match this repo's (\"$REMOTE\") -- likely a different repo sharing this basename. Skipping the pointer rather than risk cross-project contamination."
+        SYNAPSE_LINE="Synapse namespace synapse/$REPO_NAME/ exists but its remote (\"$EXISTING_REMOTE\") doesn't match this repo's (\"$REMOTE\") -- likely a different repo sharing this name. Skipping the pointer rather than risk cross-project contamination."
       fi
+    else
+      # Said, not implied by silence. A namespace covers one branch, so being on
+      # a branch without one is ordinary and expected -- but "no namespace" and
+      # "a namespace that found nothing" used to be indistinguishable, which is
+      # the conflation the per-branch keying exists to remove. Stated plainly and
+      # once, with no call to action beyond naming the command: an absent
+      # namespace is a normal state, not a problem to nag about.
+      NS_ABSENT="synapse/$REPO_NAME/"
     fi
   fi
 
@@ -76,7 +85,7 @@ if [ -n "${OBSIDIAN_VAULT_DIR:-}" ]; then
     fi
     ENTRIES="$(printf '%s\n' "$ENTRIES" | LC_ALL=C sort | sed '/^$/d')"
     if [ -n "$ENTRIES" ]; then
-      CATALOGUE_BLOCK="Other Synapse namespaces in this vault (name | remote). A session that moves into one of these repos can consult synapse/{name}/Index.md for its code graph -- but verify the listed remote against that repo's own \`git remote get-url origin\` first, since a namespace is keyed by directory basename and two unrelated repos can share one:
+      CATALOGUE_BLOCK="Other Synapse namespaces in this vault (name | remote). A session that moves into one of these repos can consult synapse/{name}/Index.md for its code graph -- but verify the listed remote against that repo's own \`git remote get-url origin\` first, since a namespace is keyed by repo and branch and names only the branch it was built from:
 $ENTRIES"
     fi
   fi
@@ -86,6 +95,10 @@ BASE_CONTEXT=""
 if [ -f "$INDEX" ]; then
   BASE_CONTEXT="$(jq -nr --rawfile content "$INDEX" --arg path "$INDEX" --arg label "$LABEL" \
     '"\($label) (\($path)) — read before creating or linking any note; prefer linking to an existing note over duplicating content, and fall back to linking this index if nothing more specific applies:\n\n" + $content')"
+fi
+
+if [ -n "$NS_ABSENT" ] && { [ -n "$BASE_CONTEXT" ] || [ -n "$CATALOGUE_BLOCK" ]; }; then
+  SYNAPSE_LINE="No Synapse namespace covers $NS_ABSENT -- this branch has no code graph. That is normal; /synapse-init builds one if it is worth it. Nothing here is stale, there is simply nothing to consult."
 fi
 
 if [ -n "$BASE_CONTEXT" ] || [ -n "$SYNAPSE_LINE" ] || [ -n "$CATALOGUE_BLOCK" ]; then

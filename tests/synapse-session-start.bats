@@ -27,14 +27,19 @@ run_hook() {
   [ -z "$output" ]
 }
 
-@test "vault index present, no synapse namespace: injects index only" {
+@test "vault index present, no synapse namespace: says so rather than staying silent" {
+  # The absence is stated, not implied. "No namespace" and "a namespace that
+  # found nothing" were indistinguishable before, which is the conflation the
+  # per-branch keying removes -- so silence here would put it straight back.
   write_vault_index
   make_repo
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
   ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
   [[ "$ctx" == *"Test index content."* ]]
-  [[ "$ctx" != *"Synapse namespace"* ]]
+  [[ "$ctx" == *"No Synapse namespace covers synapse/$(repo_name)/"* ]]
+  # Ordinary, not alarming: it must not read as something being broken.
+  [[ "$ctx" == *"That is normal"* ]]
 }
 
 @test "synapse namespace with matching remote: appends pointer line" {
@@ -45,7 +50,7 @@ run_hook() {
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
   ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  [[ "$ctx" == *"Synapse namespace for this repo: synapse/$(repo_name)/Index.md"* ]]
+  [[ "$ctx" == *"Synapse namespace for this repo and branch: synapse/$(repo_name)/Index.md"* ]]
 }
 
 @test "synapse namespace with mismatched remote: skips pointer and says so" {
@@ -69,7 +74,7 @@ run_hook() {
   run run_hook "$REPO"
   [ "$status" -eq 0 ]
   ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  [[ "$ctx" == *"Synapse namespace for this repo: synapse/$(repo_name)/Index.md"* ]]
+  [[ "$ctx" == *"Synapse namespace for this repo and branch: synapse/$(repo_name)/Index.md"* ]]
 }
 
 @test "cwd outside any git repo: base index still injected, no synapse logic invoked" {

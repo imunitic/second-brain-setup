@@ -113,7 +113,8 @@ make_layered_repo() {
   [ -f "$f" ]
   grep -q '^title: "Widget core"$' "$f"
   grep -q '^node_type: synapse-node$' "$f"
-  grep -q "^project: $(repo_name)\$" "$f"
+  grep -q "^project: $(ns_repo)\$" "$f"
+  grep -q "^branch: $(ns_branch)\$" "$f"
   grep -q '^stale: false$' "$f"
   grep -qE '^built_at: "[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}"$' "$f"
   grep -q '^<!-- synapse:generated:start -->$' "$f"

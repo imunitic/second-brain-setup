@@ -68,6 +68,17 @@ fi
 if [ -z "$NS_REMOTE" ] || [ "$NS_REMOTE" != "$REMOTE" ]; then
   exit 0
 fi
+# Same rule for the branch: the directory name encodes it, so a disagreement means
+# the folder was renamed by hand, and writing into it would flag one branch's
+# nodes for another branch's edit.
+NS_BRANCH=""
+if [ -f "$NS_INDEX" ]; then
+  NS_BRANCH="$(grep -m1 '^branch:' "$NS_INDEX" 2>/dev/null \
+    | sed -e 's/^branch: *//' -e 's/^"//' -e 's/"$//' || true)"
+fi
+if [ -z "$NS_BRANCH" ] || [ "$NS_BRANCH" != "$(synapse_branch "$REPO_ROOT")" ]; then
+  exit 0
+fi
 
 # Resolve FILE's directory to its physical (symlink-free) path before the
 # prefix strip below -- git rev-parse --show-toplevel already resolves

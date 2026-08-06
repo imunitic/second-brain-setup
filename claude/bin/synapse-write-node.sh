@@ -158,6 +158,15 @@ if curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
         echo "  refusing to overwrite -- rename one of the two repos first" >&2
         exit 1
     fi
+    # Absent is tolerated here, unlike on the read paths: a first build reaches
+    # this before the index carries either field.
+    existing_branch="$(grep -m1 '^branch:' "$work/Index.md" | sed -e 's/^branch: *//' -e 's/^"//' -e 's/"$//' || true)"
+    this_branch="$(synapse_branch "$REPO_ROOT")"
+    if [[ -n "$existing_branch" && "$existing_branch" != "$this_branch" ]]; then
+        echo "synapse-write-node: synapse/$REPO_NAME/ records branch '$existing_branch', not '$this_branch'" >&2
+        echo "  the directory name and its branch field disagree -- refusing to write" >&2
+        exit 1
+    fi
 fi
 
 # Obsidian resolves a wikilink by filename, so a sanitized title silently breaks
@@ -424,7 +433,11 @@ built_at="$(date '+%Y-%m-%d %H:%M')"
     yaml_summary="${yaml_summary//\"/\\\"}"
     printf 'summary: "%s"\n' "$yaml_summary"
     echo 'node_type: synapse-node'
-    printf 'project: %s\n' "$REPO_NAME"
+    # Repo and branch as separate fields, matching the namespace Index.md: the
+    # combined key is already the folder these live in, and splitting them is what
+    # lets a query ask for every branch's copy of one node.
+    printf 'project: %s\n' "$(synapse_repo_name "$REPO_ROOT")"
+    printf 'branch: %s\n' "$(synapse_branch "$REPO_ROOT")"
     echo 'sources:'
     paste "$work/paths.txt" "$work/hashes.txt" \
         | awk -F'\t' '{ printf "  - path: %s\n    hash: %s\n", $1, $2 }'

@@ -380,5 +380,8 @@ stage_index() { # stage_index <node.md> <path>...
   # same way; fixing it means hoisting arity out of every subcommand.
   run run_drift extra
   [ "$status" -eq 1 ]
-  [ -z "$output" ]
+  # It now names the reason on stderr rather than exiting mute -- but the reason
+  # must be "no graph here", never anything a caller could read as a finding.
+  [[ "$output" == *"no namespace covers"* ]]
+  [[ "$output" != *"is not an ancestor"* ]]
 }

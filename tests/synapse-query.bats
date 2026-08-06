@@ -199,11 +199,13 @@ write_node_index() {
   [ -z "$output" ]
 }
 
-@test "stale: no namespace for this repo: exits 1, reports nothing" {
+@test "stale: no namespace for this repo: exits 1, and says why" {
   make_repo
   run run_stale
   [ "$status" -eq 1 ]
-  [ -z "$output" ]
+  # Exit 1 already means "could not run", but a mute exit 1 is indistinguishable
+  # from a broken install; naming the branch that has no graph is the difference.
+  [[ "$output" == *"no namespace covers"* ]]
 }
 
 @test "stale: not inside a git repo: exits 1" {

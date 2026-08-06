@@ -150,10 +150,24 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/synapse-query.XXXXXX")" || exit 1
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
-# --- namespace exists, and belongs to this repo -----------------------------
-api_get_to "synapse/$REPO_NAME/Index.md" "$WORK/Index.md" || exit 1
+# --- namespace exists, and belongs to this repo AND this branch -------------
+# The directory name already encodes the branch, so these two agree by
+# construction on anything this tooling wrote. The check is for what it did not
+# write: a folder renamed by hand -- including by a migration that renamed the
+# directory but forgot the field -- which would otherwise let one branch's graph
+# answer for another. An absent field is a mismatch, not a match against the
+# empty string, exactly as for `remote`.
+api_get_to "synapse/$REPO_NAME/Index.md" "$WORK/Index.md" || {
+  echo "synapse-query: no namespace covers synapse/$REPO_NAME/ -- this branch has no graph" >&2
+  exit 1
+}
 EXISTING_REMOTE="$(grep -m1 '^remote:' "$WORK/Index.md" | sed -e 's/^remote: *//' -e 's/^"//' -e 's/"$//')"
 [ "$EXISTING_REMOTE" = "$REMOTE" ] || exit 1
+EXISTING_BRANCH="$(grep -m1 '^branch:' "$WORK/Index.md" | sed -e 's/^branch: *//' -e 's/^"//' -e 's/"$//')"
+[ "$EXISTING_BRANCH" = "$(synapse_branch "$REPO_ROOT")" ] || {
+  echo "synapse-query: synapse/$REPO_NAME/ records branch '$EXISTING_BRANCH', not '$(synapse_branch "$REPO_ROOT")'" >&2
+  exit 1
+}
 
 # --- shared helpers ---------------------------------------------------------
 

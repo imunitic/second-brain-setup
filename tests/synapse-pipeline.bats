@@ -142,7 +142,7 @@ run_pipeline() {
 
   run in_repo "$BIN/synapse-query.sh" field "OCaml — the library" project
   [ "$status" -eq 0 ]
-  [ "$output" = "$(repo_name)" ]
+  [ "$output" = "$(ns_repo)" ]
 }
 
 @test "a freshly built namespace verifies clean, and detects a real edit" {

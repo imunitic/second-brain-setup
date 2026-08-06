@@ -116,6 +116,19 @@ repo_name() {
   synapse_namespace "$REPO"
 }
 
+# The two halves of the namespace key, for assertions against the `project:` and
+# `branch:` fields the writers record separately. Derived from repo_name() rather
+# than recomputed, so all three answers come from the one shipped resolver.
+ns_repo() {
+  local ns; ns="$(repo_name)"
+  printf '%s' "${ns%@*}"
+}
+
+ns_branch() {
+  local ns; ns="$(repo_name)"
+  printf '%s' "${ns##*@}"
+}
+
 repo_remote_or_path() {
   # Falls back to the git-resolved repo root, not the raw $REPO variable --
   # git rev-parse --show-toplevel resolves symlinks (e.g. macOS /tmp ->
@@ -139,15 +152,25 @@ EOF
 }
 
 # Writes a Synapse per-project Index.md with the given `remote` frontmatter
-# value, matching the shape /synapse-init produces.
+# value, matching the shape /synapse-init produces. The first argument is the
+# namespace directory name ("{repo}@{branch}"); `project` and `branch` inside are
+# the two halves separately, which is how the real builder writes them.
+#
+# `branch` is not optional decoration: every component treats an index with no
+# branch field as a mismatch, so a fixture without one would make each of them
+# refuse and the test would pass or fail for the wrong reason.
 write_synapse_index() {
   local project="$1" remote="$2"
+  # shellcheck source=/dev/null
+  . "$HOME/.claude/bin/synapse-identity.sh"
+  local branch; branch="$(synapse_branch "$REPO")"
   mkdir -p "$VAULT/synapse/$project"
   cat > "$VAULT/synapse/$project/Index.md" <<EOF
 ---
 title: "$project — Synapse index"
 node_type: synapse-index
-project: $project
+project: ${project%@*}
+branch: $branch
 remote: "$remote"
 built_at: "test"
 ---
