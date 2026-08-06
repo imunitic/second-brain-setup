@@ -341,6 +341,65 @@ Exit codes: 0 always; empty output means nothing survived (a purely
 conversational prompt), which the caller should treat as "nothing to inject."
 ```
 
+## `synapse-vocab.sh`
+
+Reduces a whole repository to its symbol vocabulary, grouped by directory:
+`group <TAB> word <TAB> count`. Evidence for the clustering step of
+/synapse-init, so that deciding what a subsystem is about costs symbol names
+rather than source lines. See docs/synapse-graph.md's "Orientation from
+vocabulary" section.
+
+```
+Usage: synapse-vocab.sh [--repo <path>] [--depth N] [--chunk N] [--out <dir>]
+  --repo   default: the git toplevel containing $PWD.
+  --depth  directory levels that make a group, default 2 (`src/main` from
+           `src/main/java/Foo.java`). A path shallower than that groups by
+           whatever prefix it has; a repo-root file groups as `(repo root)`.
+  --chunk  files per tree-sitter invocation, default: one chunk per core,
+           floor 500. Only a parallelism knob -- see below.
+  --out    default: $SYNAPSE_WORK_DIR, i.e. ~/.claude/synapse-work/{repo}@{branch}/.
+
+Writes  <out>/groupwords.tsv   group <TAB> word <TAB> count, group then count desc
+        <out>/counts.tsv       group <TAB> file count, count desc
+
+Prints groups / files / code files / pairs on stderr, so a repo that yielded
+no vocabulary is a number rather than an empty file nobody looked at.
+
+WHY THIS IS AFFORDABLE. Tagging goes through `synapse-tags.sh --paths`, one
+invocation per chunk, because CLI startup and grammar load are nearly all of
+the per-file cost: 200 files measured 0.076s batched against 2.543s as 200
+invocations across 12 workers. The whole of syrius3 (125,351 files, 98k of
+them code) takes ~51s. Chunking exists only to use more than one core; it is
+not what makes this cheap.
+
+RAW TAGS ARE NEVER STORED. Each worker pipes `synapse-tags.sh` straight into
+the word reduction and keeps only `group <TAB> word`. The tags themselves are
+~942 MB on syrius3 against 6.9 MB of vocabulary, so writing them out first
+would cost more disk than the entire graph.
+
+EVERY TRANSFORM IS awk, NOT sed. `sed` works on whole lines, so a character
+class meant for the symbol field also mangles the group key and the tab
+between them -- and BSD `sed` reads `\t` inside a bracket expression as a
+literal `t`, which silently destroys the field separator rather than erroring.
+Everything runs under LC_ALL=C for the same class of reason: macOS `awk`
+aborts mid-stream on Latin-1 bytes, which real repos contain.
+
+Word splitting matches the identifier conventions, not English: `getUserName`
+gives get/user/name, `user_name` gives user/name, and a run of capitals stays
+with what follows it (`HTTPServer` is one word). Words shorter than 4
+characters, pure digits, and anything in ~/.claude/synapse-prompt-stopwords.conf
+are dropped -- the same list the prompt tokenizer uses, deliberately, because
+two stopword lists that disagree is how two mechanisms start giving different
+answers.
+
+Exit codes:
+  0 - ran. An EMPTY groupwords.tsv is a legitimate outcome (no file had a
+      usable grammar) and the caller must test for it: that is the signal to
+      fall back to `synapse-orientation`, not an error to report.
+  1 - could not run (not a git repo, no synapse-tags.sh, no work dir)
+  2 - usage error
+```
+
 ## `synapse-write-node.sh`
 
 Writes one Synapse node into the vault: hashes every source path, computes

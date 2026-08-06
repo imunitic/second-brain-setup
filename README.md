@@ -91,6 +91,14 @@ blocks.
   filtered/counted/grouped by module, `field` one frontmatter scalar. A script rather than direct reads
   because a hub node's `sources` is ~38k tokens and `_index.json` ~350k — everything a script reads
   internally is free, only its stdout costs tokens.
+- `claude/bin/synapse-vocab.sh` — reduces a whole repo to `group ⇥ word ⇥ count`: every symbol name
+  `tree-sitter` can see, split on CamelCase and snake_case, stopworded through the same list the
+  prompt tokenizer uses, aggregated by directory. Evidence for clustering, so deciding what a
+  subsystem is about costs symbol names rather than source lines — 7,778 code files in 4.3s, the
+  whole of syrius3 in ~51s. Raw tags are never stored (~942 MB against 6.9 MB of vocabulary); each
+  worker pipes `synapse-tags.sh --paths` straight into the reduction. An empty `groupwords.tsv` is a
+  legitimate result — no file had a usable grammar — and is the signal to fall back to
+  `synapse-orientation`, which is why it exits 0.
 - `claude/bin/synapse-build-lists.sh` — enumerates tracked files (dropping binaries, lockfiles,
   minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
   printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
@@ -227,7 +235,10 @@ clone/registration idempotency, with `tests/fixtures/fake-bin/{tree-sitter,git}`
 CLI and grammar cloning so no network access or tree-sitter install is needed), `synapse-tags-cache.sh`
 and `synapse-query.sh symbol` (cold tagging, no-op on an unchanged re-run, single-file re-tag on a hash
 change, unsupported-file caching so it's never silently retried, and the writer-side wiring that
-populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), and the five node-building
+populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), `synapse-vocab.sh` (word
+splitting, stopwording, group keying, per-run warning dedup and the empty-result contract, with the
+fake `tree-sitter` emitting the symbols a fixture authored as `symbol:` lines so a vocabulary
+assertion is about the reduction rather than about the stub), and the five node-building
 scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
 four-step build against a throwaway repo and reads the result back through `synapse-query.sh`.
 

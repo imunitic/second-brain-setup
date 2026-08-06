@@ -3,9 +3,37 @@
 # synapse-tags.sh's control flow (registry lookup -> clone -> register ->
 # invoke tags) can be asserted on without a real tree-sitter install or a
 # real grammar build. Logs every invocation to $FAKE_TS_LOG if set.
+#
+# Symbol names: every file yields `FAKE_NAME`, and additionally one tag per
+# `symbol:<Name>` line in the file itself. That keeps every pre-existing test
+# (whose fixtures contain no such line) seeing exactly what it always did,
+# while letting a test that cares about *vocabulary* -- synapse-vocab.sh's
+# CamelCase splitting, stopwording, per-group term distribution -- author the
+# symbols it wants as ordinary fixture content rather than needing a second fake.
 set -euo pipefail
 
 [ -n "${FAKE_TS_LOG:-}" ] && printf '%s\n' "$*" >> "$FAKE_TS_LOG"
+
+# The extensions this fake pretends to have a grammar for. Anything else is
+# skipped silently in batch mode, which is how a test exercises the "no grammar
+# for .zzz" path: the real CLI warns on stderr and synapse-tags.sh discards it.
+tags_for() { # tags_for <path>
+  local p="$1" name
+  case "$p" in
+    *.ml|*.java|*.py) ;;
+    *) return 0 ;;
+  esac
+  printf '%s\n' "$p"
+  printf '\tFAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
+  [ -f "$p" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      symbol:*) name="${line#symbol:}"
+                [ -n "$name" ] || continue
+                printf '\t%s\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' "$name" ;;
+    esac
+  done < "$p"
+}
 
 case "${1:-}" in
   init-config)
@@ -14,18 +42,15 @@ case "${1:-}" in
     ;;
   tags)
     # Batch form: emit the real CLI's attributable shape -- an unindented path
-    # line, then that path's tab-indented tags. A file whose extension has no
-    # grammar is skipped silently, because the real CLI writes its own warning
-    # to stderr and synapse-tags.sh discards it.
+    # line, then that path's tab-indented tags.
     if [ "${2:-}" = "--paths" ] && [ -n "${3:-}" ]; then
       while IFS= read -r p; do
         [ -n "$p" ] || continue
-        case "$p" in
-          *.ml) printf '%s\n' "$p"
-                printf '\tFAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' ;;
-        esac
+        tags_for "$p"
       done < "$3"
     else
+      # Single-file form: --scope <scope> <file>. No path line, because the
+      # caller already knows which file it asked about.
       printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
     fi
     ;;
