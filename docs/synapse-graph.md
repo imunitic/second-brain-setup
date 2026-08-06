@@ -28,6 +28,52 @@ Every other Synapse mechanism's cost is gated behind that namespace existing —
 hook's check is a plain path lookup, never a model call, so a project that never opts in pays
 nothing, forever.
 
+More precisely, a **repo and branch pair** has none until it is built there: a namespace is keyed
+`synapse/{repo}@{branch}/`. The repo half comes from the remote's basename rather than the directory,
+so a linked worktree and its parent checkout agree; the branch half from `git symbolic-ref --short
+HEAD`. Both are resolved in one place, `claude/bin/synapse-identity.sh`, because five components have
+to agree about which namespace a checkout belongs to and a second derivation is how they stop
+agreeing.
+
+Worktrees therefore need no handling of their own. Git refuses to check out one branch in two
+worktrees of a repository — the main checkout included — so a branch already names at most one
+checkout. That removes rather than solves a pile of mechanism: no `.git`-file parsing, no `commondir`
+walking, and no need to tell a linked worktree from a submodule, whose on-disk shapes are identical.
+A detached HEAD has no branch and so gets no namespace, stated rather than silently keyed under the
+literal string `HEAD`, which every detached checkout everywhere would share.
+
+The cost of that choice is paid at creation and nowhere else: each branch worth a graph pays a full
+cold build, and a branch not worth one simply has no namespace. What it buys is that `commit`, the
+per-file hashes and `stale` all describe a single tree, so a branch switch invalidates nothing — the
+graph you built on the mainline keeps describing the mainline.
+
+## Namespace end-of-life
+
+Branches are deleted, so their namespaces reach end-of-life routinely rather than exceptionally.
+`claude/bin/synapse-graph-clean.sh` removes the ones whose upstream is gone — what `git branch -vv`
+reports as `[origin/x: gone]` — after a `git fetch --prune`, without which a deleted branch still has
+a local tracking ref and the command silently finds nothing to do.
+
+It is a command you run, never a hook that fires, and that asymmetry is deliberate: every other
+automated component here *reports* and leaves acting to a deliberate step (Tier 1 flags and never
+regenerates; the correction nudge nudges and never fixes), and this is the only tool that destroys
+notes. It also errs consistently toward keeping them. Anything it cannot positively confirm is
+reported instead of removed — a branch absent locally whose upstream config went with it, or a
+namespace with no `branch` field. A failed fetch is non-fatal and leaves everything looking alive. In
+a repo with no remote there is no upstream to consult at all, so the test falls back to local branch
+existence; without that fallback the first run in such a repo would read every namespace as
+deleted-upstream and wipe the lot.
+
+The branch it checks comes from the namespace's own `branch` field, never from the directory name:
+that name has `/` translated to `-`, which is not reversible — `feature-CORE-1` could be
+`feature/CORE-1` or a branch literally named that.
+
+Removal is discard, not promotion. A branch namespace is a working copy; the trunk's namespace is the
+durable record, and its ordinary drift handling is what carries merged work forward. The corollary is
+a convention rather than a mechanism: only the trunk namespace is linked to from elsewhere in the
+vault, and a `## Notes` section worth keeping belongs there, because anything written on a branch
+namespace dies with it. That is also what makes deletion safe — nothing links into it.
+
 ## `/synapse-init`: first build
 
 Walks the repo's tracked files (`git ls-files`, so `.gitignore` exclusion is free), runs an

@@ -36,7 +36,7 @@ up as raw source in Markview and other plain Markdown viewers, while a linked im
 - `diagrams/synapse-vault-overview.png` — the Vault and its hooks.
 - `diagrams/synapse-graph-tiers.png` — the Graph's two staleness tiers and the tree-sitter layer.
 - `diagrams/design-task-workflow.png` — the design-note → task-note pipeline.
-- `diagrams/synapse-pipeline.png` — every script in one picture: which step of a build each one owns,
+- `diagrams/synapse-pipeline.png` — every script that owns a build or repair step, in one picture: which step each one owns,
   what it writes, and where the model's two contributions enter. Laid out as three lanes (model
   judgment / script mechanics / vault artifacts) so the seam is visible as the only place arrows cross
   from the first lane into the second. It opens `synapse-graph.md` as that doc's overview, with

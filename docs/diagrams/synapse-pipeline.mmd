@@ -38,7 +38,7 @@ flowchart TB
         direction LR
         NODE["{Node Title}.md × N<br/>sources · sources_digest · commit<br/>crux_path · grounded_in · stale<br/>fenced prose + human ## Notes"]
         JSON["_index.json<br/>source path → owning nodes"]
-        INDEX["Index.md<br/>node map + remote"]
+        INDEX["Index.md<br/>node map + remote + branch"]
         AUX["_manifest.tsv · _profile.txt<br/>kept for the next rebuild"]
         TAGSCACHE["_tags_cache.json<br/>path → {hash, tags, unsupported}<br/>machine-only, never authoritative"]
     end
@@ -55,9 +55,10 @@ flowchart TB
         NODESKILL["synapse-node skill<br/>Tier 2: verify, then regenerate lazily"]
         STALE1["synapse-staleness.sh<br/>Tier 1 hook: stale: true,<br/>+ correction nudge when cited<br/>evidence stops matching"]
         STALE2["synapse-query.sh stale<br/>re-hashes what a node claims —<br/>but a rename reads as gone"]
-        DRIFT["synapse-query.sh drift<br/>diffs commit..HEAD: the only thing<br/>that sees ADDED paths, deletes,<br/>renames and branch divergence"]
+        DRIFT["synapse-query.sh drift<br/>diffs commit..HEAD: the only thing<br/>that sees ADDED paths, deletes,<br/>renames and baseline divergence"]
         GROUND["synapse-query.sh grounding<br/>re-slices cited evidence:<br/>moved → re-point, changed → re-check"]
         REBUILD["/synapse-rebuild<br/>triage per node:<br/>reseat · patch from diff · re-orient"]
+        CLEAN["synapse-graph-clean.sh<br/>removes a namespace whose upstream<br/>is gone; reports what it cannot<br/>confirm. Run, never fired."]
 
         DRIFT --> REBUILD
         GROUND --> REBUILD
@@ -73,10 +74,11 @@ flowchart TB
     TAGSCACHE -.->|"read"| SYMBOL
     SYMBOL -.->|"backfill on miss"| TAGSCACHE
     REBUILD ==>|"re-writes each node,<br/>re-recording its commit"| WRITE
+    CLEAN -.->|"deletes the whole<br/>namespace when its<br/>branch is gone"| NODE
 
     class ORIENT,PROSE model
     class MANIFEST seam
-    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,SYMBOL,STALE2,DRIFT,GROUND script
+    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,SYMBOL,STALE2,DRIFT,GROUND,CLEAN script
     class NODE,JSON,INDEX,AUX,TAGSCACHE vault
     class STALE1 hook
     class REBUILD,NODESKILL cmd
