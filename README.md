@@ -164,9 +164,22 @@ it no longer installs, so nothing is left running that the docs stop describing.
 ## Testing
 
 ```sh
-brew install bats-core   # if not already installed
-bats tests/
+brew install bats-core parallel          # if not already installed
+bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/
 ```
+
+`--jobs` needs GNU `parallel` on `PATH`; without it `bats` falls back to running serially, which is
+correct but takes about three times as long (roughly 4.5 minutes against 1.5 here). The speedup comes
+mostly from parallelising *within* each file rather than just across them — `synapse-write-node.bats`
+alone is a quarter of the total, so across-files-only parallelism would leave it as the critical path.
+
+This is safe because the tests share nothing: `common_setup` gives every single test its own `mktemp`
+directory as `$HOME`, with its own scratch git repo and Vault inside it, and `common_teardown` removes
+it. There is no `setup_file`, no fixed port, and no writes to the checkout — the two tests that read it
+copy into scratch first. Keep it that way: **a test that reaches for state outside its own `$TEST_HOME`
+is a test that will fail intermittently under `--jobs`, and intermittently is the expensive way to find
+out.** The one sanctioned exception is `$REAL_HOME`, for caches that genuinely cannot be faked
+(puppeteer's Chromium, npm's package cache), and it is read-mostly by the two diagram-rendering tests.
 
 The same suite runs in CI on every push and pull request, on both Linux and macOS
 (`.github/workflows/tests.yml`). Both platforms deliberately: the two shells disagree in ways that pass
@@ -210,8 +223,9 @@ instead.
 ## Dependencies
 
 `jq`, `bats-core` (tests only), the `claude` CLI. Optional: `tree-sitter` CLI plus a C compiler for
-the Graph's tree-sitter acceleration (`synapse-tags.sh`) — everything degrades gracefully to
-full-read behaviour if either is missing, so neither is a hard requirement.
+the Graph's tree-sitter acceleration (`synapse-tags.sh`), GNU `parallel` for `bats --jobs`, and Node
+(for `npx`) to re-render the diagrams — everything degrades gracefully if any of them is missing, so
+none is a hard requirement.
 
 ## License
 

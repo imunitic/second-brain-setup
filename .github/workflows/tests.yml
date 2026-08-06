@@ -35,6 +35,17 @@ jobs:
           npm install -g --prefix "$HOME/.npm-global" bats
           echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
 
+      # GNU parallel is what `bats --jobs` shells out to. Without it bats does not
+      # fail, it silently runs serially -- so this step existing is the only thing
+      # separating a parallel run from a slow one that looks identical in the log.
+      - name: Install GNU parallel
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y parallel
+          else
+            brew install parallel
+          fi
+
       - name: Show versions
         run: |
           bats --version
@@ -52,8 +63,13 @@ jobs:
           git config --global user.email ci@example.com
           git config --global user.name CI
 
+      # --jobs parallelises within each file as well as across them, which is where
+      # the win is: one file is a quarter of the suite, so across-files-only would
+      # leave it as the critical path. Safe because every test builds its own
+      # $HOME/repo/vault under mktemp and tears it down; see README's Testing
+      # section for the invariant this depends on.
       - name: Run the suite
-        run: bats tests/
+        run: bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/
 
       # Both generated artefacts are already verified inside the suite, by their
       # own --check mode. Repeated here only so a failure names itself in the log
