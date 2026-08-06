@@ -12,17 +12,24 @@
 #            file the caller wants current in the cache (a node's `sources`,
 #            typically -- the caller already has both path and hash).
 #
-#   Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4),
-#   fed NUL-terminated records so paths containing spaces survive intact.
-#   Every worker tags one file and writes its own result to a private temp
-#   file; a single sequential step afterward merges those into the cache in
-#   one pass. No worker ever writes the shared cache file directly.
+#   Tagging is BATCHED, one `synapse-tags.sh --paths` invocation per chunk
+#   rather than one per file: CLI startup and grammar load are nearly all of
+#   the per-file cost, measured at 0.076s for 200 files in one invocation
+#   against 2.543s for 200 invocations across 12 workers. A hub node's 800
+#   sources are a handful of calls, not 800.
 #
-#   A file synapse-tags.sh can't check (no grammar, no tree-sitter, no C
-#   compiler -- its own exit 1/2) is still recorded, as `unsupported: true`
+#   Parallelism: xargs -P over the chunks, capped at nproc/sysctl -n hw.ncpu
+#   (falls back to 4). Each worker writes its own raw batch output to a private
+#   temp file; a single sequential jq pass afterward attributes those to paths
+#   and merges them into the cache. No worker ever writes the shared cache file
+#   directly.
+#
+#   A file with no usable grammar is still recorded, as `unsupported: true`
 #   with empty tags, so it isn't silently re-attempted on every call. That is
 #   a distinct outcome from "checked, symbol not present" -- callers must
-#   report it as such, never as a plain non-match.
+#   report it as such, never as a plain non-match. In batch output the two are
+#   told apart by shape: an unparseable file is absent entirely, while one that
+#   parsed to nothing still gets its path line.
 #
 # Exit codes:
 #   0 - cache is current for every requested path (already-current paths need
@@ -74,58 +81,79 @@ LC_ALL=C comm -23 "$WORK/requested.tsv" "$WORK/cached.tsv" > "$WORK/needs-taggin
 [ -s "$WORK/needs-tagging.tsv" ] || exit 0
 
 N="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+need_n="$(LC_ALL=C wc -l < "$WORK/needs-tagging.tsv" | tr -d ' ')"
 
-# One job per file: tag it, write {path, hash, tags, unsupported} to a
-# private result file. Exported so xargs's child `bash -c` shells see it.
-tag_one() { # tag_one <path> <hash> <outfile>
-  local path="$1" hash="$2" outfile="$3" tags rc unsupported
-  tags="$("$HOME/.claude/bin/synapse-tags.sh" "$REPO_ROOT/$path" 2>/dev/null)"
-  rc=$?
-  [ "$rc" -eq 0 ] && unsupported=false || unsupported=true
-  jq -n --arg path "$path" --arg hash "$hash" --arg tags "$tags" --argjson unsupported "$unsupported" \
-    '{path: $path, hash: $hash, tags: $tags, unsupported: $unsupported}' > "$outfile"
-}
-export -f tag_one
-export REPO_ROOT
+# One invocation per CHUNK, not per file. CLI startup and grammar load are
+# nearly all of the per-file cost -- 200 files measured 0.076s batched against
+# 2.543s as 200 invocations across 12 workers -- so a hub node's 800 sources
+# went from a per-file loop to a handful of calls. The floor keeps a small node
+# from being split into chunks whose startup outweighs their work.
+CHUNK=$(( (need_n + N - 1) / N ))
+[ "$CHUNK" -ge 200 ] || CHUNK=200
+mkdir -p "$WORK/chunks" "$WORK/out"
+cut -f1 "$WORK/needs-tagging.tsv" > "$WORK/needs-paths.txt"
+split -l "$CHUNK" "$WORK/needs-paths.txt" "$WORK/chunks/c."
 
-# Splits one job record and hands its fields to tag_one. A separate function
-# purely so the xargs child below stays free of tab-quoting gymnastics.
-tag_record() { # tag_record <path TAB hash TAB outfile>
-  local path hash outfile
-  IFS=$'\t' read -r path hash outfile <<< "$1"
-  tag_one "$path" "$hash" "$outfile"
-}
-export -f tag_record
+# Generated rather than an exported shell function: `export -f` is a bash
+# builtin that silently does nothing when the surrounding shell is zsh, and the
+# symptom is a suspiciously fast run that produced nothing.
+#
+# The batch runs from $REPO_ROOT with repo-relative paths, so the path lines
+# tree-sitter echoes back ARE the cache keys -- no re-derivation, and nothing
+# for a path containing a space to be split on. That is what the previous
+# `xargs -L 1` shape got wrong: xargs word-splits on spaces as well as tabs, so
+# such a path shifted every field, tagged the wrong file, and wrote its result
+# where the merge never looked. The entry silently never entered the cache and
+# was re-attempted on every subsequent call.
+cat > "$WORK/worker.sh" <<'WORKER'
+#!/bin/bash
+# worker.sh <chunk> <out-dir> <repo-root> <tags-sh>
+chunk="$1"; outdir="$2"; repo="$3"; tags_sh="$4"
+cd "$repo" || exit 0
+"$tags_sh" --paths "$chunk" 2>/dev/null > "$outdir/$(basename "$chunk").tags"
+WORKER
+chmod +x "$WORK/worker.sh"
 
-# NUL-terminated records, one whole record per child (`-0 -n 1`), split on the
-# tab inside the child -- NOT `-L 1` with three positional args. xargs word-
-# splits on blanks, tabs *and spaces* alike, so a source path containing a
-# space would shift every field: the child would tag the wrong path and write
-# its result to a stray file outside $WORK/results, which the merge below then
-# skips. That path would never enter the cache, so `synapse-query.sh symbol`
-# would report it as "not checked" and re-attempt it on every single call.
-mkdir -p "$WORK/results"
-i=0
-: > "$WORK/jobs.nul"
-while IFS=$'\t' read -r path hash; do
-  i=$((i + 1))
-  printf '%s\t%s\t%s/results/%s.json\0' "$path" "$hash" "$WORK" "$i" >> "$WORK/jobs.nul"
-done < "$WORK/needs-tagging.tsv"
+find "$WORK/chunks" -type f -name 'c.*' -print0 \
+  | xargs -0 -P "$N" -I {} "$WORK/worker.sh" {} "$WORK/out" "$REPO_ROOT" "$TAGS_SH"
 
-xargs -0 -P "$N" -n 1 bash -c 'tag_record "$1"' _ < "$WORK/jobs.nul"
+cat "$WORK"/out/*.tags > "$WORK/all.tags" 2>/dev/null || : > "$WORK/all.tags"
 
-# --- sequential join: one jq pass merges every result into the cache -------
-# `-s` slurps the cache plus every result file into one array: .[0] is the
-# cache object, .[1:] are the per-file results. A single process, not one
-# jq spawn per changed file -- that loop shape is what the parallel tagging
-# step above exists to avoid, and re-introducing it here for the merge would
-# undercut the same thing.
-shopt -s nullglob
-result_files=("$WORK"/results/*.json)
-[ ${#result_files[@]} -gt 0 ] || exit 0
-jq -s '
-  (.[0]) as $base |
-  (.[1:] | map({(.path): {hash: .hash, tags: .tags, unsupported: .unsupported}}) | add) as $new |
-  $base * $new
-' "$CACHE" "${result_files[@]}" > "$WORK/merged.json" || exit 1
+# --- sequential join: ONE jq pass attributes the batch and merges it --------
+# Batch output is attributable by shape: an unindented line is a path, and the
+# tab-indented lines under it are that path's tags. A file tree-sitter has no
+# grammar for is absent from the output entirely, whereas one it parsed and
+# found nothing in still gets its path line -- verified against the real CLI,
+# and the distinction is the whole basis for `unsupported` here. Recording it
+# is what stops an unparseable file being re-attempted on every single call.
+#
+# jq does the attribution rather than a shell loop for the usual reason: a loop
+# would be one process per path, which is the cost the batching just removed.
+jq --rawfile tags "$WORK/all.tags" --rawfile req "$WORK/needs-tagging.tsv" '
+  . as $base
+  | ($tags | split("\n")
+     | reduce .[] as $l ({cur: null, acc: {}};
+         if $l == "" then .
+         elif ($l | startswith("\t")) then
+           # The indent is batch-mode framing, not content: single-file output
+           # has no leading tab, and consumers split on \t and read field 1 as
+           # the symbol name. Keeping it would make field 1 empty on every
+           # line, so `synapse-query.sh symbol` would match nothing at all and
+           # report it as a clean not-found. Stripped here so a cache entry is
+           # byte-identical to what the per-file form recorded.
+           ($l | ltrimstr("\t")) as $t
+           | if .cur == null then .
+             else .acc[.cur] += (if .acc[.cur] == "" then $t else "\n" + $t end)
+             end
+         else .cur = $l | .acc[$l] = (.acc[$l] // "")
+         end)
+     | .acc) as $tagged
+  | reduce ($req | split("\n"))[] as $line ($base;
+      ($line | split("\t")) as $f
+      | if ($f | length) < 2 or $f[0] == "" then .
+        else .[$f[0]] = { hash: $f[1],
+                          tags: ($tagged[$f[0]] // ""),
+                          unsupported: ($tagged | has($f[0]) | not) }
+        end)
+' "$CACHE" > "$WORK/merged.json" || exit 1
 mv "$WORK/merged.json" "$CACHE"

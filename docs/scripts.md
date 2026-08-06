@@ -315,17 +315,24 @@ Usage: synapse-tags-cache.sh --repo-root <path> --cache <_tags_cache.json path> 
            file the caller wants current in the cache (a node's `sources`,
            typically -- the caller already has both path and hash).
 
-  Parallelism: xargs -P, capped at nproc/sysctl -n hw.ncpu (falls back to 4),
-  fed NUL-terminated records so paths containing spaces survive intact.
-  Every worker tags one file and writes its own result to a private temp
-  file; a single sequential step afterward merges those into the cache in
-  one pass. No worker ever writes the shared cache file directly.
+  Tagging is BATCHED, one `synapse-tags.sh --paths` invocation per chunk
+  rather than one per file: CLI startup and grammar load are nearly all of
+  the per-file cost, measured at 0.076s for 200 files in one invocation
+  against 2.543s for 200 invocations across 12 workers. A hub node's 800
+  sources are a handful of calls, not 800.
 
-  A file synapse-tags.sh can't check (no grammar, no tree-sitter, no C
-  compiler -- its own exit 1/2) is still recorded, as `unsupported: true`
+  Parallelism: xargs -P over the chunks, capped at nproc/sysctl -n hw.ncpu
+  (falls back to 4). Each worker writes its own raw batch output to a private
+  temp file; a single sequential jq pass afterward attributes those to paths
+  and merges them into the cache. No worker ever writes the shared cache file
+  directly.
+
+  A file with no usable grammar is still recorded, as `unsupported: true`
   with empty tags, so it isn't silently re-attempted on every call. That is
   a distinct outcome from "checked, symbol not present" -- callers must
-  report it as such, never as a plain non-match.
+  report it as such, never as a plain non-match. In batch output the two are
+  told apart by shape: an unparseable file is absent entirely, while one that
+  parsed to nothing still gets its path line.
 
 Exit codes:
   0 - cache is current for every requested path (already-current paths need

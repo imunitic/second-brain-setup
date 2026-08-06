@@ -160,7 +160,9 @@ blocks.
 - `claude/bin/synapse-tags-cache.sh` — keeps `$SYNAPSE_WORK_DIR/_tags_cache.json` (`path → {hash,
   tags}`, default `~/.claude/synapse-work/{repo}@{branch}/`) current for a set of files, piggybacked on the same per-file hash comparison node
   regeneration already performs rather than a separate staleness pass: unchanged paths are skipped,
-  changed-or-missing ones are (re-)tagged in parallel via `xargs -P` (capped at the machine's core
+  changed-or-missing ones are (re-)tagged one `synapse-tags.sh --paths` invocation per *chunk* rather
+  than per file — 400 real Java files went from 10.26s to 1.39s, and the cache it produces is byte-for-byte
+  the same. Chunks run in parallel via `xargs -P` (capped at the machine's core
   count), each worker writing its own result to a private temp file before one sequential merge writes
   the cache — never a worker writing the shared file directly. `synapse-write-node.sh` calls this as a
   byproduct of its own hashing; `synapse-query.sh symbol` calls it to lazily backfill whatever a node's

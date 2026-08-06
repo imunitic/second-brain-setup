@@ -64,8 +64,11 @@ write_sample_files() { # write_sample_files <count>
   [ "$n" -eq 3 ]
   [[ "$(jq -r '."sample_1.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"FAKE_NAME"* ]]
   [ "$(jq -r '."sample_1.ml".unsupported' "$TEST_HOME/_tags_cache.json")" = "false" ]
-  # Every requested file was actually tagged once.
-  [ "$(grep -c '^tags' "$FAKE_TS_LOG")" -eq 3 ]
+  # Every requested file was tagged -- in ONE invocation, not three. Startup
+  # and grammar load are nearly all of the per-file cost, so a per-file loop
+  # here would undo the batching that exists upstream in synapse-tags.sh.
+  [ "$(grep -c '^path ' "$FAKE_TS_LOG")" -eq 3 ]
+  [ "$(grep -c '^tags ' "$FAKE_TS_LOG")" -eq 1 ]
 }
 
 @test "unchanged hashes: no re-tagging on a second run" {
@@ -93,7 +96,11 @@ write_sample_files() { # write_sample_files <count>
 
   run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^tags' "$FAKE_TS_LOG")" -eq 1 ]
+  # Which file was tagged, not how many invocations happened: once tagging is
+  # batched, an invocation count no longer distinguishes "re-tagged one file"
+  # from "re-tagged all three in one call".
+  [ "$(grep -c '^path ' "$FAKE_TS_LOG")" -eq 1 ]
+  grep -qx 'path sample_1.ml' "$FAKE_TS_LOG"
   [ "$(jq -r '."sample_1.ml".hash' "$TEST_HOME/_tags_cache.json")" = "$new_hash" ]
   [ "$(jq -c '."sample_2.ml"' "$TEST_HOME/_tags_cache.json")" = "$before_2" ]
   [ "$(jq -c '."sample_3.ml"' "$TEST_HOME/_tags_cache.json")" = "$before_3" ]
@@ -117,6 +124,82 @@ write_sample_files() { # write_sample_files <count>
   run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
   [ "$status" -eq 0 ]
   [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "a file that parsed to no tags is NOT recorded as unsupported" {
+  # The distinction the batched form rests on, and the one it could most easily
+  # lose: an unparseable file is absent from the batch output entirely, while a
+  # file that parsed and simply had nothing in it still gets its path line.
+  # Conflating them would make `synapse-query.sh symbol` report a perfectly
+  # readable file as "not checked", and re-tag it on every single call.
+  make_repo
+  mkdir -p "$REPO"
+  printf 'notags\n' > "$REPO/empty.ml"
+  printf 'let x = 1\n' > "$REPO/full.ml"
+  printf 'no grammar for this\n' > "$REPO/other.unknownext"
+  for f in empty.ml full.ml other.unknownext; do
+    printf '%s\t%s\n' "$f" "$(git -C "$REPO" hash-object "$f")" >> "$TEST_HOME/paths.tsv"
+  done
+
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+
+  [ "$(jq -r '."empty.ml".unsupported' "$TEST_HOME/_tags_cache.json")" = "false" ]
+  [ "$(jq -r '."empty.ml".tags' "$TEST_HOME/_tags_cache.json")" = "" ]
+  [[ "$(jq -r '."full.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"FAKE_NAME"* ]]
+  [ "$(jq -r '."other.unknownext".unsupported' "$TEST_HOME/_tags_cache.json")" = "true" ]
+
+  # And all three are current: none is re-attempted.
+  : > "$FAKE_TS_LOG"
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
+@test "tags are attributed to the right file within one batch" {
+  # Batch output is one flat stream for many files, so misattribution is the
+  # new failure mode: every path's tags must be its own, not the previous
+  # path's or the whole batch's.
+  make_repo
+  mkdir -p "$REPO"
+  printf 'symbol:AlphaOnly\n' > "$REPO/a.ml"
+  printf 'symbol:BetaOnly\n'  > "$REPO/b.ml"
+  printf 'notags\n'           > "$REPO/c.ml"
+  for f in a.ml b.ml c.ml; do
+    printf '%s\t%s\n' "$f" "$(git -C "$REPO" hash-object "$f")" >> "$TEST_HOME/paths.tsv"
+  done
+
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^tags ' "$FAKE_TS_LOG")" -eq 1 ]
+
+  [[ "$(jq -r '."a.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"AlphaOnly"* ]]
+  [[ "$(jq -r '."a.ml".tags' "$TEST_HOME/_tags_cache.json")" != *"BetaOnly"* ]]
+  [[ "$(jq -r '."b.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"BetaOnly"* ]]
+  [[ "$(jq -r '."b.ml".tags' "$TEST_HOME/_tags_cache.json")" != *"AlphaOnly"* ]]
+  [ "$(jq -r '."c.ml".tags' "$TEST_HOME/_tags_cache.json")" = "" ]
+  # No trailing newline, matching what the per-file form recorded.
+  [ "$(jq -r '."a.ml".tags' "$TEST_HOME/_tags_cache.json" | wc -l | tr -d ' ')" -eq 2 ]
+}
+
+@test "cached tag lines carry no batch indent, so field 1 is still the symbol" {
+  # Batch output indents every tag line under its path; single-file output does
+  # not. Consumers split on \t and read field 1 as the symbol name, so leaving
+  # the indent makes field 1 empty on every line and `synapse-query.sh symbol`
+  # matches nothing -- reporting a clean not-found for a file it did read.
+  # Asserted here rather than only through that downstream symptom, because the
+  # symptom looks like a query bug and this is where it would originate.
+  make_repo
+  mkdir -p "$REPO"
+  printf 'symbol:AlphaOnly\n' > "$REPO/a.ml"
+  printf 'a.ml\t%s\n' "$(git -C "$REPO" hash-object a.ml)" > "$TEST_HOME/paths.tsv"
+
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+
+  run jq -r '.[].tags' "$TEST_HOME/_tags_cache.json"
+  [ "$(grep -c '^	' <<< "$output")" -eq 0 ]
+  [ "$(awk -F'\t' '$1 == "AlphaOnly"' <<< "$output" | wc -l | tr -d ' ')" -eq 1 ]
 }
 
 @test "several files needing tagging at once: every one ends up correctly cached" {
