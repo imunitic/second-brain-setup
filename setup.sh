@@ -65,6 +65,14 @@ else
   echo "  installed from template -- edit to add your own ecosystem's src/ conventions: $DEST/synapse-module-boilerplate.conf"
 fi
 
+echo "== synapse-ignore-files.conf =="
+if [ -f "$DEST/synapse-ignore-files.conf" ]; then
+  echo "  already exists, leaving in place: $DEST/synapse-ignore-files.conf"
+else
+  cp "$SRC/synapse-ignore-files.conf.template" "$DEST/synapse-ignore-files.conf"
+  echo "  installed from template -- excludes nothing extra by default: $DEST/synapse-ignore-files.conf"
+fi
+
 echo "== synapse-prompt-stopwords.conf =="
 if [ -f "$DEST/synapse-prompt-stopwords.conf" ]; then
   echo "  already exists, leaving in place: $DEST/synapse-prompt-stopwords.conf"

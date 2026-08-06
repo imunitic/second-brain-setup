@@ -1,0 +1,45 @@
+# Copy this to ~/.claude/synapse-ignore-files.conf (setup.sh does this for you).
+# Never overwritten once installed -- edit or extend any time.
+#
+# Extra path patterns dropped at enumeration by synapse-build-lists.sh, on top
+# of the built-in exclusions (compiled objects, archives, media, model weights,
+# lockfiles, minified bundles, source maps). This is the repo-specific half:
+# whatever *this* machine's projects carry that is noise everywhere else too.
+#
+# One extended regular expression per line, matched against the repo-relative
+# path. Blank lines and `#` comments are ignored. Lines are OR'd together, so
+# each is independent -- there is no ordering and no negation.
+#
+# NOT gitignore syntax, deliberately. Gitignore has anchoring rules, `**`
+# globs, and negation with precedence, and a half-implementation of it that
+# silently disagrees with git on an edge case would be worse than an honest
+# regex list. If you want git's semantics, use git's: a tracked file can be
+# removed from the graph by untracking it, and `git ls-files` already respects
+# every ignore rule for untracked ones.
+#
+# Superseded nothing: $SYNAPSE_EXTRA_EXCLUDE_RE still works and is OR'd with
+# whatever is here, so an existing one-off invocation keeps behaving the same.
+#
+# WHAT BELONGS HERE, and what does not. Excluding a path removes it from the
+# graph entirely -- it gets no owning node, so searching its name in the vault
+# finds nothing, and editing it flags nothing stale. That is right for build
+# output and vendored code, which nobody asks questions about. It is wrong for
+# files that are merely *uninteresting to read*: a declarative artifact whose
+# edits still change behaviour wants to stay covered, so that its owning node
+# is flagged when it changes, even if no summary is ever written from it.
+# Coverage and relevance are separate questions; this file answers only the
+# first one.
+#
+# Examples, all commented out -- the default is to exclude nothing extra.
+
+# Vendored dependencies checked into the tree
+# (^|/)(vendor|third_party|external)/
+
+# Generated sources that are tracked rather than gitignored
+# (^|/)(gen|generated|__generated__)/
+
+# Fixture corpora and recorded payloads -- large, numerous, never read
+# (^|/)(fixtures|testdata|__snapshots__|cassettes)/
+
+# IDE and tooling metadata that happens to be tracked
+# (^|/)\.(idea|vscode|settings)/

@@ -377,6 +377,84 @@ make_mixed_repo() {
   [[ "$output" == *"not inside a git repo"* ]]
 }
 
+@test "files over the size cap are skipped AND reported, never dropped silently" {
+  make_repo
+  mkdir -p "$REPO/src"
+  printf 'small\n' > "$REPO/src/small.java"
+  # Just over a deliberately tiny cap, so the test does not write a real megabyte.
+  head -c 3000 /dev/zero | tr '\0' 'x' > "$REPO/src/huge.java"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m files
+  write_manifest "All\t.\t\n"
+
+  run env SYNAPSE_MAX_FILE_BYTES=1000 SYNAPSE_WORK_DIR="$WORK" \
+    bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$BUILD_LISTS"
+  [ "$status" -eq 0 ]
+  grep -qx 'src/small.java' "$WORK/all.txt"
+  ! grep -qx 'src/huge.java' "$WORK/all.txt"
+  # The reporting half is the point: a silent skip makes `enumerated` disagree
+  # with the repo, which is the failure the coverage number exists to prevent.
+  [[ "$output" == *"skipped 1 file(s) over 1000 bytes"* ]]
+  [[ "$output" == *"src/huge.java"* ]]
+}
+
+@test "the default cap is 1 MB, so ordinary source is unaffected" {
+  make_repo
+  mkdir -p "$REPO/src"
+  head -c 200000 /dev/zero | tr '\0' 'x' > "$REPO/src/big-but-fine.java"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m big
+  write_manifest "All\t.\t\n"
+
+  run run_build
+  [ "$status" -eq 0 ]
+  grep -qx 'src/big-but-fine.java' "$WORK/all.txt"
+  [[ "$output" != *"skipped"* ]]
+}
+
+@test "synapse-ignore-files.conf patterns are honoured, and OR'd with the env var" {
+  make_repo
+  mkdir -p "$REPO/vendor" "$REPO/gen" "$REPO/src"
+  printf 'x\n' > "$REPO/vendor/lib.java"
+  printf 'x\n' > "$REPO/gen/Made.java"
+  printf 'x\n' > "$REPO/src/keep.java"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m mix
+  write_manifest "All\t.\t\n"
+  # Comments and blank lines must survive parsing; an empty pattern would match
+  # every path and enumerate nothing.
+  printf '# a comment\n\n(^|/)vendor/\n' > "$HOME/.claude/synapse-ignore-files.conf"
+
+  run env SYNAPSE_EXTRA_EXCLUDE_RE='(^|/)gen/' SYNAPSE_WORK_DIR="$WORK" \
+    bash -c 'cd "$1" && shift && bash "$@"' _ "$REPO" "$BUILD_LISTS"
+  [ "$status" -eq 0 ]
+  grep -qx 'src/keep.java' "$WORK/all.txt"
+  ! grep -q 'vendor/' "$WORK/all.txt"   # from the conf file
+  ! grep -q 'gen/' "$WORK/all.txt"      # from the env var
+}
+
+@test "a blank or comment line AFTER a pattern does not swallow the whole repo" {
+  # The specific hazard: appending an empty string to the alternation leaves a
+  # trailing `|`, i.e. an empty alternative, which matches every path -- so the
+  # enumeration silently comes back with zero files. A comments-only conf does
+  # NOT reproduce this (the accumulator never becomes non-empty), which is why
+  # the ordering here matters.
+  make_repo
+  mkdir -p "$REPO/vendor" "$REPO/src"
+  printf 'x\n' > "$REPO/vendor/lib.java"
+  printf 'x\n' > "$REPO/src/keep.java"
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q -m mix
+  write_manifest "All\t.\t\n"
+  printf '(^|/)vendor/\n\n# a trailing comment\n\n' > "$HOME/.claude/synapse-ignore-files.conf"
+
+  run run_build
+  [ "$status" -eq 0 ]
+  grep -qx 'src/keep.java' "$WORK/all.txt"     # survives
+  ! grep -q 'vendor/' "$WORK/all.txt"          # still excluded
+  [ "$(wc -l < "$WORK/all.txt" | tr -d ' ')" -gt 0 ]
+}
+
 @test "an unknown flag exits 2" {
   make_mixed_repo
   write_manifest 'Java\t^mod-a/\t\n'

@@ -45,8 +45,18 @@ Writes  $SYNAPSE_WORK_DIR/all.txt        enumerated tracked files (kept if prese
         $SYNAPSE_WORK_DIR/unassigned.txt files no node claimed
 
 Prints enumerated/covered/unassigned counts, so a bad pattern shows up as a
-number rather than a silent gap. $SYNAPSE_EXTRA_EXCLUDE_RE appends repo-specific
-noise to the built-in exclusions.
+number rather than a silent gap.
+
+Two ways to drop more than the built-in exclusions, both OR'd together:
+  ~/.claude/synapse-ignore-files.conf   one ERE per line, comments allowed
+  $SYNAPSE_EXTRA_EXCLUDE_RE             a single ERE, for one-off invocations
+Excluding a path removes it from the graph entirely -- no owning node, no
+vault search hit, no staleness flag when it changes. Right for build output
+and vendored code; wrong for anything whose edits still matter.
+
+Files over $SYNAPSE_MAX_FILE_BYTES (default 1048576, 1 MB) are skipped and
+reported, not dropped silently: no extension or name rule anticipates a
+generated monster, and a silent skip makes `enumerated` disagree with the repo.
 
 Exit codes: 0 ok, 1 could not run, 2 usage error
 ```

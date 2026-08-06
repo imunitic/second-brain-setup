@@ -13,8 +13,18 @@
 #         $SYNAPSE_WORK_DIR/unassigned.txt files no node claimed
 #
 # Prints enumerated/covered/unassigned counts, so a bad pattern shows up as a
-# number rather than a silent gap. $SYNAPSE_EXTRA_EXCLUDE_RE appends repo-specific
-# noise to the built-in exclusions.
+# number rather than a silent gap.
+#
+# Two ways to drop more than the built-in exclusions, both OR'd together:
+#   ~/.claude/synapse-ignore-files.conf   one ERE per line, comments allowed
+#   $SYNAPSE_EXTRA_EXCLUDE_RE             a single ERE, for one-off invocations
+# Excluding a path removes it from the graph entirely -- no owning node, no
+# vault search hit, no staleness flag when it changes. Right for build output
+# and vendored code; wrong for anything whose edits still matter.
+#
+# Files over $SYNAPSE_MAX_FILE_BYTES (default 1048576, 1 MB) are skipped and
+# reported, not dropped silently: no extension or name rule anticipates a
+# generated monster, and a silent skip makes `enumerated` disagree with the repo.
 #
 # Exit codes: 0 ok, 1 could not run, 2 usage error
 set -euo pipefail
@@ -79,19 +89,48 @@ readonly NOISE_RE='(^|/)('\
 'go\.sum|mix\.lock|pubspec\.lock|packages\.lock\.json|flake\.lock'\
 ')$|\.min\.(js|css)$|\.(js|css|ts)\.map$'
 
+# Repo-specific exclusions from a conf file, OR'd with the pre-existing env var
+# so an invocation that set it keeps behaving identically. One ERE per line;
+# comments and blanks dropped. `^$` when there is nothing, which never matches a
+# path -- an empty pattern would match everything and silently enumerate zero
+# files.
+IGNORE_CONF="$HOME/.claude/synapse-ignore-files.conf"
+EXTRA_RE="${SYNAPSE_EXTRA_EXCLUDE_RE:-}"
+if [[ -f "$IGNORE_CONF" ]]; then
+    while IFS= read -r pat; do
+        pat="${pat%%#*}"
+        pat="$(printf '%s' "$pat" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$pat" ]] || continue
+        EXTRA_RE="${EXTRA_RE:+$EXTRA_RE|}$pat"
+    done < "$IGNORE_CONF"
+fi
+readonly EXTRA_RE
+
+# A cap rather than a pattern, because no extension or name rule anticipates a
+# generated monster. Borrowed from Graft, which caps at the same 1 MB. Counted
+# and reported below: a file dropped silently would make `enumerated` a number
+# that quietly disagrees with the repo.
+readonly MAX_FILE_BYTES="${SYNAPSE_MAX_FILE_BYTES:-1048576}"
+
 if [[ ! -s "$ALL" || "$reenumerate" == true ]]; then
     echo "--- enumerating tracked files"
+    : > "$WORK_DIR/oversize.txt"
     git ls-files \
         | grep -vE "$BINARY_RE" \
         | grep -vE "$NOISE_RE" \
-        | grep -vE "${SYNAPSE_EXTRA_EXCLUDE_RE:-^$}" \
+        | grep -vE "${EXTRA_RE:-^$}" \
         | while IFS= read -r p; do
         # -f drops submodule gitlinks: one ls-files entry each, but a directory on
         # disk, and `git hash-object` fails the whole batch on one. Written as an
         # `if` because as the body's last statement a false `[[ -f ]] && printf`
         # makes the loop exit 1, which under `set -e` kills the script.
         if [[ -f "$p" ]]; then
-            printf '%s\n' "$p"
+            sz=$(wc -c < "$p" 2>/dev/null | tr -d ' ')
+            if [[ "${sz:-0}" -gt "$MAX_FILE_BYTES" ]]; then
+                printf '%s\t%s\n' "${sz:-0}" "$p" >> "$WORK_DIR/oversize.txt"
+            else
+                printf '%s\n' "$p"
+            fi
         fi
     done > "$ALL"
 fi
@@ -119,6 +158,11 @@ LC_ALL=C sort "$ALL" > "$WORK_DIR/all-sorted.txt"
 # but not in en_US.UTF-8) -- which would make the coverage report claim nothing is
 # covered, with no warning at all.
 LC_ALL=C comm -23 "$WORK_DIR/all-sorted.txt" "$WORK_DIR/covered.txt" > "$WORK_DIR/unassigned.txt"
+if [[ -s "$WORK_DIR/oversize.txt" ]]; then
+    printf 'skipped %s file(s) over %s bytes (largest first):\n' \
+        "$(wc -l < "$WORK_DIR/oversize.txt" | tr -d ' ')" "$MAX_FILE_BYTES"
+    LC_ALL=C sort -rn "$WORK_DIR/oversize.txt" | head -5 | awk -F'\t' '{ printf "  %10s  %s\n", $1, $2 }'
+fi
 printf 'enumerated: %s\ncovered:    %s\nunassigned: %s\n' \
     "$(wc -l < "$WORK_DIR/all-sorted.txt" | tr -d ' ')" \
     "$(wc -l < "$WORK_DIR/covered.txt" | tr -d ' ')" \

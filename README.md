@@ -95,7 +95,13 @@ blocks.
   minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
   printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
   Works out of `$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo}@{branch}/` — never the repo,
-  since these scripts run from inside it.
+  since these scripts run from inside it. Repo-specific exclusions come from
+  `~/.claude/synapse-ignore-files.conf` (one ERE per line) OR'd with `$SYNAPSE_EXTRA_EXCLUDE_RE`, and
+  files over `$SYNAPSE_MAX_FILE_BYTES` (default 1 MB) are skipped *and reported* — no extension or
+  name rule anticipates a generated monster, and a silent skip would make `enumerated` disagree with
+  the repo. Excluding a path removes it from the graph entirely: no owning node, no vault search hit,
+  no staleness flag when it changes. That is right for build output and vendored code, and wrong for
+  anything whose edits still matter — which is a separate question from whether it is worth *reading*.
 - `claude/bin/synapse-write-node.sh` — writes one node: hashes every source, computes
   `sources_digest`, records the baseline `commit`, slices the `crux` out of the file from a line
   pointer, records each `grounded_in` range as a digest, builds the aggregated `## Sources` mirror, and
