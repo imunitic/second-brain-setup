@@ -266,25 +266,51 @@ Exit codes:
 
 ## `synapse-tags.sh`
 
-Prints `tree-sitter tags` output (definitions + name-based call references)
-for a single file, cloning/registering that language's grammar on first use.
-Deliberately dumb/mechanical -- no reasoning here. See docs/synapse-graph.md's
-"Optional tree-sitter acceleration" section and `synapse-grammars.conf`'s own
-header for the design.
+Prints `tree-sitter tags` output (definitions + name-based call references),
+cloning/registering each language's grammar on first use. Deliberately
+dumb/mechanical -- no reasoning here. See docs/synapse-graph.md's "Optional
+tree-sitter acceleration" section and `synapse-grammars.conf`'s own header.
 
 ```
 Usage: synapse-tags.sh <file-path>
+       synapse-tags.sh --paths <file-list>
   Grammar cache dir: $SYNAPSE_GRAMMARS_DIR, default ~/.cache/synapse/grammars/.
+
+`--paths` tags every listed file in ONE tree-sitter invocation. That is not a
+convenience: CLI startup and grammar load dominate the per-file cost, and 200
+Java files measured 0.076s batched against 2.543s as 200 invocations across 12
+workers -- 33x, single-threaded against parallel. At 20,000 files a single
+invocation runs ~17.5s, so per-file work is real; startup simply swamped it at
+any size below a few thousand. Anything walking a whole repository should use
+this form.
+
+Output is attributable in both forms: an unindented line is a path, and the
+tab-indented lines under it are that path's tags.
+
+A mixed-extension list is fine and is why batch mode passes no `--scope`:
+tree-sitter infers the language per file from its extension, whereas forcing a
+scope makes it parse every file as that language (verified -- a `.gradle` file
+in a Java-scoped batch is parsed as Java). Single-file mode keeps `--scope`,
+which is exact and preserves its existing behaviour.
+
+Extensions with no usable grammar are reported once each on stderr and skipped;
+tree-sitter's own warning is eight lines per FILE, which is unreadable at repo
+scale. One line per extension is all a caller can act on.
 
 Exit codes (every caller must fail soft on any non-zero and fall back to
 reading the file directly -- this is never a hard dependency):
-  0 - tags printed to stdout
+  0 - tags printed to stdout. In `--paths` mode this is the outcome whenever
+      the batch ran, even if some extensions had no grammar: a mixed repo
+      nearly always has some, and failing the batch for them would throw away
+      every language that did work.
   1 - not usable right now (missing tree-sitter/jq/C compiler, no
       extension, a registry entry marked `unsupported: true`, or a clone/
       registration failure) -- nothing else to try
   2 - extension has no registry entry at all -- the caller (a Claude
       procedure, e.g. /synapse-init) should run grammar discovery and
-      retry, not treat this the same as a hard failure
+      retry, not treat this the same as a hard failure.
+      Single-file mode only: a batch spanning many extensions has no single
+      answer, so it warns per extension and returns 0.
 ```
 
 ## `synapse-tokenizer.sh`

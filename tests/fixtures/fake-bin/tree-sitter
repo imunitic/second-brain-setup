@@ -13,7 +13,21 @@ case "${1:-}" in
     printf '{}' > "$HOME/.config/tree-sitter/config.json"
     ;;
   tags)
-    printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
+    # Batch form: emit the real CLI's attributable shape -- an unindented path
+    # line, then that path's tab-indented tags. A file whose extension has no
+    # grammar is skipped silently, because the real CLI writes its own warning
+    # to stderr and synapse-tags.sh discards it.
+    if [ "${2:-}" = "--paths" ] && [ -n "${3:-}" ]; then
+      while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        case "$p" in
+          *.ml) printf '%s\n' "$p"
+                printf '\tFAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' ;;
+        esac
+      done < "$3"
+    else
+      printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
+    fi
     ;;
   *)
     exit 1
