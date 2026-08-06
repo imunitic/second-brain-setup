@@ -331,6 +331,27 @@ write_list() { # write_list <NN> <title> <path>...
   [[ "$output" == *"NN.txt/NN.title"* ]]
 }
 
+@test "test classes contribute vocabulary, because a summary is made of names" {
+  # The other half of the summary/crux pool split (synapse-rank.sh --pool).
+  # Tests are excluded from the CRUX pool -- a crux is concentrated logic -- but
+  # they must keep feeding the summary: on a real node `Gegenpartei` and `Frist`
+  # came only from test class names, at zero read cost. Excluding tests here as
+  # well as there would silently cost those concepts.
+  git init -q "$REPO"
+  # The class declaration is spelled out because the fake only emits `symbol:`
+  # lines; real tree-sitter tags the class itself, which is exactly how a test
+  # class name reaches the vocabulary in the first place.
+  src src/main/java/Service.java Alpha
+  src src/test/java/GegenparteiTest.java GegenparteiTest Frist
+  git -C "$REPO" add -A
+  git -C "$REPO" -c user.email=test@test -c user.name=test commit -q -m init
+
+  run run_vocab --depth 1
+  [ "$status" -eq 0 ]
+  [ -n "$(count_of src frist)" ]
+  [ -n "$(count_of src gegenpartei)" ]
+}
+
 @test "raw tags are never written to disk, only the reduction" {
   # 98k code files produce ~942 MB of tags against 6.9 MB of vocabulary, so the
   # worker must stream into the reduction. Asserted structurally: the tags-sh

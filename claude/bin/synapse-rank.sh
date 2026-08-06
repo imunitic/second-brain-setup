@@ -5,11 +5,35 @@
 # docs/synapse-graph.md's "Orientation from vocabulary" section.
 #
 # Usage: synapse-rank.sh --sources <file> [--repo <path>] [--top N] [--tier T]
+#                        [--pool summary|crux]
 #   --sources  file of repo-relative paths, one per line -- a node's `sources`,
 #              or synapse-build-lists.sh's lists/NN.txt.
 #   --repo     default: the git toplevel containing $PWD.
 #   --top      lines per tier, default 10. `--top 0` prints every ranked file.
 #   --tier     restrict output to `code` or `dsl`. Default: both.
+#   --pool     which half of the authoring job this is for, default `summary`
+#              (which is the unrestricted behaviour). See below.
+#
+# THE TWO POOLS ARE NOT THE SAME SET OF FILES, and that is a measured result
+# rather than tidiness.
+#
+#   summary   everything. A summary is made of NAMES, so it draws on test class
+#             names and DSL consumer names as well as implementation -- both at
+#             zero read cost, and both carrying domain concepts nothing else
+#             surfaces. On a real node `Gegenpartei` and `Frist` came only from
+#             test class names.
+#
+#   crux      implementation only, tests excluded, code tier only. A crux is
+#             concentrated logic, and none of the seven `crux_path` values
+#             recorded in a real namespace is a test. Density ranks tests high
+#             for a structural reason -- many small `@Test` methods, each a
+#             definition, in a small file -- so without this they would crowd
+#             out the thing a crux is supposed to point at.
+#
+# What counts as a test is a path/filename heuristic, not a parse, and it is
+# deliberately conservative about the boundary: `FooTest.java` is a test,
+# `Latest.java` is not. Override the whole rule with $SYNAPSE_TEST_PATH_RE (one
+# ERE) for a project that names tests some other way.
 #
 # Prints `tier <TAB> score <TAB> path`, ranked within each tier, code first.
 # Counts per tier go to stderr, so a node whose files all scored zero is a
@@ -66,12 +90,14 @@ SOURCES=""
 REPO=""
 TOP=10
 TIER=""
+POOL="summary"
 while [ $# -gt 0 ]; do
     case "$1" in
         --sources) SOURCES="${2:-}"; shift 2 || usage ;;
         --repo)    REPO="${2:-}";    shift 2 || usage ;;
         --top)     TOP="${2:-}";     shift 2 || usage ;;
         --tier)    TIER="${2:-}";    shift 2 || usage ;;
+        --pool)    POOL="${2:-}";    shift 2 || usage ;;
         -h|--help) usage 0 ;;
         *) usage ;;
     esac
@@ -79,6 +105,10 @@ done
 [ -n "$SOURCES" ] || usage
 case "$TOP" in ''|*[!0-9]*) usage ;; esac
 case "$TIER" in ''|code|dsl) ;; *) usage ;; esac
+case "$POOL" in summary|crux) ;; *) usage ;; esac
+# A crux is code, so the DSL tier has nothing to contribute to it. Set here
+# rather than checked at every use, so the two selectors cannot disagree.
+[ "$POOL" != "crux" ] || TIER="code"
 [ -f "$SOURCES" ] || { echo "synapse-rank: no such sources file: $SOURCES" >&2; exit 1; }
 
 command -v git >/dev/null || { echo "synapse-rank: git required" >&2; exit 1; }
@@ -101,10 +131,26 @@ mkdir -p "$W/chunks" "$W/out"
 # graph.
 CODE_RE='\.(java|kt|kts|scala|groovy|gradle|js|jsx|ts|tsx|py|go|rs|c|cc|cpp|h|hpp|cs|rb|php|swift|sh|bash)$'
 
+# Test files, by the conventions that actually recur across languages: a path
+# segment named test/spec, a `FooTest`/`FooSpec` basename, a `_test`/`.test.`
+# suffix, a `test_` prefix. The capital in `[a-z0-9](Tests?|Spec)` is the whole
+# point of that branch -- without it `Latest.java` reads as a test, and silently
+# dropping a real implementation file from the crux pool is exactly the kind of
+# wrong answer that never announces itself.
+TEST_RE="${SYNAPSE_TEST_PATH_RE:-(^|/)(test|tests|spec|specs|__tests__|testing)/|[^/]*[a-z0-9](Tests?|Spec)\.[^/.]+$|[^/]*[._-](test|spec)\.[^/.]+$|(^|/)[Tt]est_[^/]*$}"
+
 cd "$REPO_ROOT" || exit 1
 LC_ALL=C sort -u "$SOURCES" | LC_ALL=C awk 'NF' > "$W/all.txt"
 LC_ALL=C grep -E "$CODE_RE" "$W/all.txt" > "$W/code.txt" || : > "$W/code.txt"
 LC_ALL=C grep -vE "$CODE_RE" "$W/all.txt" > "$W/noncode.txt" || : > "$W/noncode.txt"
+
+tests_dropped=0
+if [ "$POOL" = "crux" ]; then
+    LC_ALL=C grep -vE "$TEST_RE" "$W/code.txt" > "$W/code-impl.txt" || : > "$W/code-impl.txt"
+    tests_dropped=$(( $(LC_ALL=C wc -l < "$W/code.txt" | tr -d ' ') \
+                    - $(LC_ALL=C wc -l < "$W/code-impl.txt" | tr -d ' ') ))
+    mv "$W/code-impl.txt" "$W/code.txt"
+fi
 
 # stem <TAB> module <TAB> path. The module is the first two path segments, or
 # whatever prefix a shallower path has; `(repo root)` for a file with none, so
@@ -201,9 +247,13 @@ emit() { # emit <file>
 [ "$TIER" = "dsl" ] || emit "$W/code-ranked.tsv"
 [ "$TIER" = "code" ] || emit "$W/dsl-ranked.tsv"
 
-printf 'synapse-rank: %s sources -> code %s, dsl-consumers %s, unranked %s\n' \
+# Tests dropped is reported rather than merely done: a crux pool that silently
+# shrank would look identical to a node that simply has few code files.
+printf 'synapse-rank: pool %s, %s sources -> code %s, dsl-consumers %s, unranked %s, tests-excluded %s\n' \
+    "$POOL" \
     "$(LC_ALL=C wc -l < "$W/all.txt" | tr -d ' ')" \
     "$(LC_ALL=C wc -l < "$W/code-ranked.tsv" | tr -d ' ')" \
     "$(LC_ALL=C wc -l < "$W/dsl-ranked.tsv" | tr -d ' ')" \
-    "$(LC_ALL=C wc -l < "$W/noncode.txt" | tr -d ' ')" >&2
+    "$(LC_ALL=C wc -l < "$W/noncode.txt" | tr -d ' ')" \
+    "$tests_dropped" >&2
 exit 0

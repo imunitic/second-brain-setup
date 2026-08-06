@@ -217,6 +217,112 @@ rank_of() { # rank_of <path> <output>
   [ -z "$(data "$output")" ]
 }
 
+# --- the two pools ---------------------------------------------------------
+
+@test "the crux pool excludes tests even when density ranks them first" {
+  # Density ranks tests high for a structural reason -- many small @Test
+  # methods, each a definition, in a small file -- so this is not a rare
+  # collision, it is the normal outcome. Without the split, the crux pointer
+  # would routinely land on a test.
+  git init -q "$REPO"
+  src src/main/java/Service.java 3000 Alpha Beta
+  src src/test/java/ServiceTest.java 0 T1 T2 T3 T4 T5 T6
+  commit_repo
+  want src/main/java/Service.java src/test/java/ServiceTest.java
+
+  # It really would have won on density alone.
+  run run_rank --pool summary --tier code
+  [ "$status" -eq 0 ]
+  [ "$(rank_of src/test/java/ServiceTest.java "$output")" -eq 1 ]
+
+  run run_rank --pool crux
+  [ "$status" -eq 0 ]
+  [ -z "$(rank_of src/test/java/ServiceTest.java "$output")" ]
+  [ -n "$(rank_of src/main/java/Service.java "$output")" ]
+  [[ "$output" == *"tests-excluded 1"* ]]
+}
+
+@test "the summary pool keeps tests, because a summary is made of names" {
+  # `Gegenpartei` and `Frist` came only from test class names on a real node.
+  # Excluding tests from both halves would have cost those concepts entirely.
+  git init -q "$REPO"
+  src src/main/java/Service.java 0 Alpha
+  src src/test/java/GegenparteiTest.java 0 Frist
+  commit_repo
+  want src/main/java/Service.java src/test/java/GegenparteiTest.java
+
+  run run_rank --pool summary
+  [ "$status" -eq 0 ]
+  [ -n "$(rank_of src/test/java/GegenparteiTest.java "$output")" ]
+  [[ "$output" == *"tests-excluded 0"* ]]
+}
+
+@test "the crux pool emits no dsl tier: a crux is code" {
+  git init -q "$REPO"
+  src core/src/KundeController.java 0 Alpha
+  printf 'x\n' > "$REPO/core/src/Kunde.gui"
+  commit_repo
+  want core/src/Kunde.gui core/src/KundeController.java
+
+  run run_rank --pool crux
+  [ "$status" -eq 0 ]
+  [ "$(data "$output" | awk -F'\t' '$1 == "dsl"' | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+@test "test detection does not swallow implementation files that merely end in -test" {
+  # `Latest.java` ends in the letters "test". Silently dropping a real
+  # implementation file from the crux pool is precisely the kind of wrong
+  # answer that never announces itself, so the boundary is asserted directly.
+  git init -q "$REPO"
+  src core/src/Latest.java 0 Alpha
+  src core/src/Contest.java 0 Beta
+  src core/src/RealTest.java 0 Gamma
+  commit_repo
+  want core/src/Latest.java core/src/Contest.java core/src/RealTest.java
+
+  run run_rank --pool crux
+  [ "$status" -eq 0 ]
+  [ -n "$(rank_of core/src/Latest.java "$output")" ]
+  [ -n "$(rank_of core/src/Contest.java "$output")" ]
+  [ -z "$(rank_of core/src/RealTest.java "$output")" ]
+}
+
+@test "test detection covers the conventions that recur across languages" {
+  git init -q "$REPO"
+  src core/src/Keep.java 0 Alpha
+  src core/src/FooTest.java 0 A
+  src core/src/FooSpec.java 0 B
+  src core/src/thing_test.py 0 C
+  src core/src/test_thing.py 0 D
+  src core/src/widget.test.ts 0 E
+  src core/spec/Helper.java 0 F
+  commit_repo
+  want core/src/Keep.java core/src/FooTest.java core/src/FooSpec.java \
+       core/src/thing_test.py core/src/test_thing.py core/src/widget.test.ts \
+       core/spec/Helper.java
+
+  run run_rank --pool crux --top 0
+  [ "$status" -eq 0 ]
+  [ "$(data "$output" | wc -l | tr -d ' ')" -eq 1 ]
+  [ -n "$(rank_of core/src/Keep.java "$output")" ]
+  [[ "$output" == *"tests-excluded 6"* ]]
+}
+
+@test "SYNAPSE_TEST_PATH_RE replaces the built-in rule" {
+  # A project that names tests some other way needs one knob, not a patch.
+  git init -q "$REPO"
+  src core/src/FooTest.java 0 Alpha
+  src core/src/Probe.java 0 Beta
+  commit_repo
+  want core/src/FooTest.java core/src/Probe.java
+
+  run env PATH="$FAKE_BIN:$PATH" SYNAPSE_TEST_PATH_RE='Probe' \
+    "$SCRIPT" --sources "$SRC" --repo "$REPO" --pool crux
+  [ "$status" -eq 0 ]
+  [ -n "$(rank_of core/src/FooTest.java "$output")" ]
+  [ -z "$(rank_of core/src/Probe.java "$output")" ]
+}
+
 # --- output shape ----------------------------------------------------------
 
 @test "--top limits each tier, and --top 0 prints everything" {

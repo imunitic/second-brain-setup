@@ -110,7 +110,13 @@ blocks.
   Everything else scores zero. What counts as declarative is *derived*, not listed: a non-code file
   whose stem prefixes a code file's stem in the same module. Shipping a list of extensions would have
   meant shipping one project's vocabulary as if it were universal. Coverage is untouched — `sources`
-  stays exhaustive, and this only sets reading order.
+  stays exhaustive, and this only sets reading order. `--pool` splits the two halves of authoring:
+  the **summary** pool keeps everything, because a summary is made of *names* and test class names
+  carry domain concepts nothing else surfaces (`Gegenpartei` and `Frist` came only from those); the
+  **crux** pool is implementation only, since a crux is concentrated logic and density ranks tests
+  high for a structural reason — many small `@Test` methods, each a definition, in a small file.
+  What counts as a test is a conservative path/filename heuristic (`FooTest.java` yes, `Latest.java`
+  no), replaceable wholesale with `$SYNAPSE_TEST_PATH_RE`.
 - `claude/bin/synapse-gate.sh` — the one quality check `/synapse-init` never had. Coverage was
   already provable by regex expansion plus `comm`; whether a cluster corresponds to a *concept* was
   judgment, discovered only when someone tried to write its summary and found nothing to say. Reads
@@ -265,8 +271,8 @@ assertion is about the reduction rather than about the stub), `synapse-gate.sh` 
 pinned in both directions, document frequency counted across clusters rather than within one, and
 the threshold's floor and scaling — against hand-written vocabulary tables, since what the gate
 decides is separable from how the counts were obtained), `synapse-rank.sh` (size normalisation
-asserted in both directions, definitions distinguished from references, and the module constraint on
-the consumer hop), and the five node-building
+asserted in both directions, definitions distinguished from references, the module constraint on
+the consumer hop, and the summary/crux pool split including the `Latest.java` boundary), and the five node-building
 scripts both individually and end-to-end through `tests/synapse-pipeline.bats`, which runs the whole
 four-step build against a throwaway repo and reads the result back through `synapse-query.sh`.
 

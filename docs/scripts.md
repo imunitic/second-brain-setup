@@ -308,11 +308,35 @@ docs/synapse-graph.md's "Orientation from vocabulary" section.
 
 ```
 Usage: synapse-rank.sh --sources <file> [--repo <path>] [--top N] [--tier T]
+                       [--pool summary|crux]
   --sources  file of repo-relative paths, one per line -- a node's `sources`,
              or synapse-build-lists.sh's lists/NN.txt.
   --repo     default: the git toplevel containing $PWD.
   --top      lines per tier, default 10. `--top 0` prints every ranked file.
   --tier     restrict output to `code` or `dsl`. Default: both.
+  --pool     which half of the authoring job this is for, default `summary`
+             (which is the unrestricted behaviour). See below.
+
+THE TWO POOLS ARE NOT THE SAME SET OF FILES, and that is a measured result
+rather than tidiness.
+
+  summary   everything. A summary is made of NAMES, so it draws on test class
+            names and DSL consumer names as well as implementation -- both at
+            zero read cost, and both carrying domain concepts nothing else
+            surfaces. On a real node `Gegenpartei` and `Frist` came only from
+            test class names.
+
+  crux      implementation only, tests excluded, code tier only. A crux is
+            concentrated logic, and none of the seven `crux_path` values
+            recorded in a real namespace is a test. Density ranks tests high
+            for a structural reason -- many small `@Test` methods, each a
+            definition, in a small file -- so without this they would crowd
+            out the thing a crux is supposed to point at.
+
+What counts as a test is a path/filename heuristic, not a parse, and it is
+deliberately conservative about the boundary: `FooTest.java` is a test,
+`Latest.java` is not. Override the whole rule with $SYNAPSE_TEST_PATH_RE (one
+ERE) for a project that names tests some other way.
 
 Prints `tier <TAB> score <TAB> path`, ranked within each tier, code first.
 Counts per tier go to stderr, so a node whose files all scored zero is a
