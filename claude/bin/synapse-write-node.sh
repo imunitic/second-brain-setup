@@ -145,8 +145,9 @@ urlencode_path() {
 }
 
 # --- refuse to write into another repo's namespace ---------------------------
-# A namespace is keyed by directory basename, so two unrelated repos can collide.
-# Absent Index.md means a first-time build is in progress, which is fine.
+# A namespace is keyed by repo and branch, so a collision needs two repos whose
+# remotes differ but whose key matches -- rare, and silently destructive if it
+# happened. Absent Index.md means a first-time build is in progress, which is fine.
 if curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
         -H "Accept: text/markdown" -o "$work/Index.md" \
         "$BASE/vault/$(urlencode_path "synapse/$REPO_NAME/Index.md")"; then

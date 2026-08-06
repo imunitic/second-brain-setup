@@ -31,9 +31,15 @@ common_setup() {
   # because $TMPDIR is honoured above, and a TMPDIR that happens to live inside
   # a git repo (e.g. ~/.emacs.d/var/tmp) makes every scratch directory look like
   # part of that repo -- so a test asserting "this is not a git repo" passes or
-  # fails depending on the machine. The ceiling is $TEST_HOME itself, which is
-  # above $REPO, so discovery from inside the test repo still finds it first.
-  export GIT_CEILING_DIRECTORIES="$TEST_HOME"
+  # fails depending on the machine.
+  #
+  # The ceiling is $TEST_HOME's *parent*, not $TEST_HOME. Git stops before
+  # *entering* a directory on this list, so listing $TEST_HOME does not stop a
+  # walk that starts at $TEST_HOME: it examines $TEST_HOME, then ascends to an
+  # unlisted parent and keeps going. Listing the parent is what actually halts
+  # it. Discovery from inside $REPO still finds $REPO/.git first, so the scratch
+  # repo is unaffected either way.
+  export GIT_CEILING_DIRECTORIES="$(dirname "$TEST_HOME")"
 
   cat > "$HOME/.claude/synapse.conf" <<EOF
 OBSIDIAN_VAULT_DIR="$VAULT"

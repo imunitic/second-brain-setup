@@ -2,7 +2,7 @@
 
 Builds a repo's Synapse Graph namespace in Synapse Vault — a small set of LLM-authored node
 notes (summary + crux + typed links per subsystem/concept) plus the two derived projections that
-keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo-name}/Index.md`).
+keep it cheap to consult and keep stale (`_index.json`, `synapse/{repo}@{branch}/Index.md`).
 
 This is the **only** way a project gets a Synapse namespace in the first place — nothing else in
 this system creates one unprompted, matching the "zero cost for projects that never opt in"
@@ -36,11 +36,24 @@ No arguments — always operates on the repo containing the current working dire
 Every step below needs the same three facts, resolved once up front:
 
 1. **Repo root:** `git rev-parse --show-toplevel`.
-2. **Repo name:** basename of the repo root. This is the Synapse namespace key
-   (`synapse/{repo-name}/`) — a plain, readable folder name, not a collision-proof key (see the
-   design note's Alternatives for why). Distinct from the short task-prefix scheme
-   (`project-name=prefix`) used by `/synapse-note`/`/synapse-design-note` — unrelated
-   conventions that happen to both involve the word "project."
+2. **Namespace key:** `{repo}@{branch}`, resolved by `synapse_namespace` in
+   `~/.claude/bin/synapse-identity.sh` — never derived by hand here, since every component reads it
+   from that one place and a second derivation is how they start disagreeing. The repo half comes
+   from the *remote's* basename, not the directory: a linked worktree's directory name differs from
+   its parent's, and that difference is exactly what must not matter. The branch half is
+   `git symbolic-ref --short HEAD`, with `/` and other filename-hostile characters translated.
+
+   A namespace describes **one branch**. That is the point: it keeps `commit`, the per-file hashes
+   and `stale` describing a single tree, and it means a branch switch leaves the old graph intact
+   rather than invalidating it wholesale.
+
+   **On a detached HEAD, stop.** There is no branch, so there is no key — `synapse_namespace` exits
+   1 and says so. Do not invent one, and do not fall back to the directory name: every detached
+   checkout everywhere would collide on the same value. Tell the user to check out a branch first.
+
+   Distinct from the short task-prefix scheme (`project-name=prefix`) used by
+   `/synapse-note`/`/synapse-design-note` — unrelated conventions that happen to both involve the
+   word "project."
 3. **Remote:** `git remote get-url origin` (or any configured remote if `origin` doesn't exist —
    pick the first one `git remote` lists). If the repo has no remote at all, fall back to the
    repo root's absolute path. This is the verification field written into the per-project
@@ -48,8 +61,8 @@ Every step below needs the same three facts, resolved once up front:
 
 ## Already initialized?
 
-Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list` on
-`synapse/{repo-name}/`, or a direct `vault_read` attempt).
+Check whether `synapse/{repo}@{branch}/Index.md` exists (`mcp__obsidian__vault_list` on
+`synapse/{repo}@{branch}/`, or a direct `vault_read` attempt).
 
 - **Doesn't exist** → this is a first-time build. Go to "First-time build" below.
 - **Exists, `remote` frontmatter matches** the resolved remote/path → this namespace already
@@ -57,9 +70,9 @@ Check whether `synapse/{repo-name}/Index.md` exists (`mcp__obsidian__vault_list`
   time — see the design note's Generation & Regeneration section); the only thing `/synapse-init`
   still does for an already-initialized project is the manual "process it now" sweep of
   `_unassigned` — go to "Re-running on an initialized project" below.
-- **Exists, `remote` mismatches** → `synapse/{repo-name}/` belongs to a *different* repo that
-  happens to share a basename. Do not touch it. Stop and tell the user plainly: "A Synapse
-  namespace already exists at `synapse/{repo-name}/` for a different remote/path
+- **Exists, `remote` mismatches** → `synapse/{repo}@{branch}/` belongs to a *different* repo that
+  happens to share this key. Do not touch it. Stop and tell the user plainly: "A Synapse
+  namespace already exists at `synapse/{repo}@{branch}/` for a different remote/path
   (`{existing remote}`) — this repo's remote is `{resolved remote}`. Refusing to overwrite; rename
   one of the two repos, or pick a different resolution, before initializing here." This is the
   same detect-and-flag asymmetry the `SessionStart` hook uses — contaminating one project's graph
@@ -75,7 +88,7 @@ yours and cannot be scripted because what counts as signal differs per codebase.
   manifest + prove coverage), `synapse-write-node.sh` (hash, digest, `## Sources` mirror, PUT),
   `synapse-push-nodes.sh`, `synapse-build-index.sh`, `synapse-build-project-index.sh`.
 
-**The work directory** defaults to `~/.claude/synapse-work/{repo-name}/`, created on demand, and
+**The work directory** defaults to `~/.claude/synapse-work/{repo}@{branch}/`, created on demand, and
 holds `manifest.tsv`, `all.txt`, `lists/`, the authored `b-NN.md` bodies and the coverage files. Override with `$SYNAPSE_WORK_DIR` if you need to. Two things never to do: point it
 at the repo (these scripts run from inside the repo, so its working files would land in the user's
 checkout) or at the vault (Obsidian would index a file list that runs to six figures of lines).
@@ -148,7 +161,7 @@ emit into tool calls than read into a window. Never hand-author those.
    why, or skip question 4** — a truncated symbol list looks authoritative and is worthless.
 
    **When an aggregation is worth repeating, write it down rather than retyping it.** Once you have
-   run the same one-liner for the third cluster, record it in `synapse/{repo-name}/_profile.txt` — a
+   run the same one-liner for the third cluster, record it in `synapse/{repo}@{branch}/_profile.txt` — a
    machine-only sibling of `_index.json`, never a node — as a fenced command plus one line on what
    it revealed about *this* repo. **Read it, don't execute it:** it is a record of the aggregations
    that earned their keep, so a later run applies the commands itself rather than shelling out to a
@@ -232,14 +245,14 @@ emit into tool calls than read into a window. Never hand-author those.
 
    Keep the manifest: it is the reviewable record of a judgment call, and re-running or extending
    the namespace later should start from it rather than re-deriving the clustering. Copying it to
-   `synapse/{repo-name}/_manifest.tsv` alongside `_index.json` is worth doing for any repo you
+   `synapse/{repo}@{branch}/_manifest.tsv` alongside `_index.json` is worth doing for any repo you
    expect to revisit.
 5. **Write each node.** Author the prose only — put each node's content in
    `$SYNAPSE_WORK_DIR/b-NN.md` (matching its `lists/NN.txt`), then run `synapse-push-nodes.sh`,
    which calls `synapse-write-node.sh` per node. The contract below is what that writer implements
    and what `synapse-query.sh stale` verifies; it is specified here because the two must agree
    exactly, not because you should hand-build the file. A node lands at
-   `synapse/{repo-name}/{Node Title}.md`:
+   `synapse/{repo}@{branch}/{Node Title}.md`:
 
    Each `b-NN.md` opens with its own one-line summary in frontmatter, so everything authored about a
    node is in one file:
@@ -411,7 +424,7 @@ emit into tool calls than read into a window. Never hand-author those.
    `project` is the repo name resolved above, not the task-prefix scheme.
 
 6. **Write `_index.json`** — mechanics, run `synapse-build-index.sh`. It emits
-   `synapse/{repo-name}/_index.json`, mapping every source path used
+   `synapse/{repo}@{branch}/_index.json`, mapping every source path used
    above to the list of node **filenames, including the `.md` extension** (matching the design
    note's schema exactly, since the `PostToolUse` hook and the read-time procedure both use this
    value directly as a vault path with no extension-handling of their own) that claim it, plus an
@@ -428,7 +441,7 @@ emit into tool calls than read into a window. Never hand-author those.
    }
    ```
 
-7. **Write `synapse/{repo-name}/Index.md`** — mechanics, run `synapse-build-project-index.sh`. It
+7. **Write `synapse/{repo}@{branch}/Index.md`** — mechanics, run `synapse-build-project-index.sh`. It
    takes no prose from you at all: each bullet's headline is read back from that node's `summary`
    frontmatter field, and the script computes the exact file count, the sanitized wikilink filename
    and the `remote` field. Bullets come out sorted by title. Run it only after the nodes exist — it
@@ -453,14 +466,15 @@ emit into tool calls than read into a window. Never hand-author those.
 
    ```yaml
    ---
-   title: "{repo-name} — Synapse index"
+   title: "{repo}@{branch} — Synapse index"
    node_type: synapse-index
-   project: {repo-name}
+   project: {repo}
+   branch: {branch}
    remote: "{resolved remote or path}"
    built_at: "<now>"
    ---
 
-   # {repo-name} — Synapse index
+   # {repo}@{branch} — Synapse index
 
    - [[World — entity/component/resource core]] — {one-line summary} (built {built_at})
    - ...
@@ -473,9 +487,9 @@ regeneration (see the design note's Node Granularity & Grouping) — for a proje
 dormant and has no other regeneration event to piggyback on. It does **not** re-cluster or rebuild
 existing nodes.
 
-1. Read `synapse/{repo-name}/_index.json`'s `_unassigned` array. Empty → report "Nothing
+1. Read `synapse/{repo}@{branch}/_index.json`'s `_unassigned` array. Empty → report "Nothing
    unassigned, nothing to do" and stop.
-2. Read `synapse/{repo-name}/Index.md` for the current node list (titles + summaries).
+2. Read `synapse/{repo}@{branch}/Index.md` for the current node list (titles + summaries).
 3. For each unassigned path: try `~/.claude/bin/synapse-tags.sh {path}` first (same exit-code
    handling as the first-time build's per-file pass above) as a fast pre-classification signal,
    falling back to a full read for genuinely ambiguous cases. Classify against the existing node
@@ -505,5 +519,5 @@ existing nodes.
   staleness check + regeneration — a procedure, not a hook, documented alongside this command) and
   flagged stale by the `PostToolUse` hook on every subsequent edit to a source file.
 - The `SessionStart` hook's pointer injection depends on this command having run at least once —
-  it does a plain existence check on `synapse/{repo-name}/Index.md` and does nothing if this was
+  it does a plain existence check on `synapse/{repo}@{branch}/Index.md` and does nothing if this was
   never run.

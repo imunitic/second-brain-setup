@@ -42,22 +42,26 @@ replacing it is the entire point. Volunteer a smaller option only where a *corre
 for one, and even then do the full job if the human says so.
 
 **One mechanical fact about branches, because it is not guessable.** A namespace is keyed by repo
-basename and remote, so every branch of a repo shares one. Rebuilding after a branch switch therefore
-*replaces* the graph rather than adding a second one, and switching back and rebuilding again is the
-normal way to return. Both standing habits are legitimate and the choice is already made by whoever
-typed the command: keep the graph permanently on your mainline and read drift's "not an ancestor of
-HEAD" warning as "this describes a different line", or rebuild at every switch so the graph always
-describes the checkout in front of you. Neither needs to be talked out of, or asked about.
+*and branch* (`synapse/{repo}@{branch}/`), so each branch has its own or has none. A branch switch
+therefore no longer invalidates anything: the graph you built on the mainline stays intact and keeps
+describing the mainline, and the branch you switched to simply has no namespace until someone runs
+`/synapse-init` there. That is an ordinary state, not a problem to fix.
+
+So the massive-drift case this command exists for is now the *unusual* one rather than the norm. It
+still happens — a branch can be checked out inside any worktree, and a long-lived branch gets rebased
+onto a moved trunk, which leaves the recorded baseline off the current line exactly as a branch switch
+used to. Read a "not an ancestor of HEAD" warning as "history moved under this graph", and reach for
+this command when it does. What no longer happens is arriving here merely because you changed branch.
 
 ## Prerequisites
 
-- The namespace must exist. If `synapse/{repo-name}/Index.md` is absent, this is a first build — use
+- The namespace must exist. If `synapse/{repo}@{branch}/Index.md` is absent, this is a first build — use
   `/synapse-init`.
-- The work directory (`$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo-name}/`) ideally
+- The work directory (`$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo}@{branch}/`) ideally
   holds the `manifest.tsv` from the original build. Without it, new paths cannot be classified as
   auto-claimable, and clustering decisions have to be re-derived — say so rather than proceeding as if
-  nothing were missing. `synapse/{repo-name}/_manifest.tsv` is the fallback copy.
-- Read `synapse/{repo-name}/_profile.txt` if it exists, before triaging anything. It records the
+  nothing were missing. `synapse/{repo}@{branch}/_manifest.tsv` is the fallback copy.
+- Read `synapse/{repo}@{branch}/_profile.txt` if it exists, before triaging anything. It records the
   aggregations that carried signal for this repo and the searches that came back empty.
 
 ## Procedure

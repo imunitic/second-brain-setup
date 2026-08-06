@@ -35,7 +35,7 @@ orientation-then-clustering pass biased by `CLAUDE.md`/`README.md` if present (h
 authoritative structure), and writes:
 
 - One node file per subsystem/concept — a few dozen per repo, not one per file — under
-  `synapse/{repo-name}/{Node Title}.md`. Each carries `sources` (**every** file the node covers, as
+  `synapse/{repo}@{branch}/{Node Title}.md`. Each carries `sources` (**every** file the node covers, as
   a repo-relative path + `git hash-object` fingerprint), `sources_digest` (sha256 over the `LC_ALL=C`
   sorted `path:hash` lines, so "has this node changed" is one comparison rather than N), a
   plain-English `summary`, a `crux` (the few lines that carry the actual logic — **authored as a
@@ -46,10 +46,11 @@ authoritative structure), and writes:
 - `_index.json` — a derived, machine-only reverse index (source path → owning node filenames, plus
   an `_unassigned` bucket for anything not yet claimed) that the cheap staleness hook can look up
   directly, without reasoning about anything.
-- `synapse/{repo-name}/Index.md` — the human/Claude-facing map: node titles, one-line summaries read
-  back from each node's own `summary` frontmatter field (so the index cannot describe a node as it
-  used to be), file counts, and a `remote` field (the repo's git remote, or its absolute path if it
-  has none) used to detect a rare same-basename collision between two unrelated repos.
+- `synapse/{repo}@{branch}/Index.md` — the human/Claude-facing map: node titles, one-line summaries
+  read back from each node's own `summary` frontmatter field (so the index cannot describe a node as
+  it used to be), file counts, and the identity fields `remote` (the repo's git remote, or its
+  absolute path if it has none) and `branch`, verified together before anything reads from or writes
+  into the namespace.
 
 Re-running it on an already-initialized project doesn't rebuild anything — it's just the manual
 fallback for sweeping the `_unassigned` bucket, for a repo that's gone fully dormant with no other
@@ -88,21 +89,21 @@ interpretation: a fixed script has to hardcode one ecosystem's conventions — J
 `*Service` suffixes, say, or Rust crate paths — and is then wrong everywhere else. `/synapse-init`
 carries a checklist instead (where is the weight, what artifact dominates, what does the code call
 itself versus what its directories call it, what are the domain's verbs), plus the instruction to
-record the aggregations that earned their keep in `synapse/{repo-name}/_profile.txt`. Same pattern as
+record the aggregations that earned their keep in `synapse/{repo}@{branch}/_profile.txt`. Same pattern as
 `synapse-tags.sh` with its `~/.claude/synapse-grammars.conf` registry: ship the language-agnostic
 primitive, let the per-language or per-repo specifics be discovered and cached.
 
 ### Three per-repo artifacts, in two places
 
-- **`~/.claude/synapse-work/{repo-name}/`** — the work directory (`manifest.tsv`, `all.txt`,
+- **`~/.claude/synapse-work/{repo}@{branch}/`** — the work directory (`manifest.tsv`, `all.txt`,
   `lists/`, authored node bodies, coverage files). Persistent, so a later run finds
   the previous clustering. Deliberately *not* the repo — these scripts run from inside the repo, so a
   `$PWD` default would drop megabytes of working files into a user's checkout — and *not* the vault,
   which would put a six-figure-line file list into Obsidian's search index.
-- **`synapse/{repo-name}/_manifest.tsv`** — the clustering, copied into the vault because it is inert
+- **`synapse/{repo}@{branch}/_manifest.tsv`** — the clustering, copied into the vault because it is inert
   data describing the graph, and a second machine should be able to extend the namespace without
   re-deriving it.
-- **`synapse/{repo-name}/_profile.txt`** — the aggregations that proved useful for this repo, as
+- **`synapse/{repo}@{branch}/_profile.txt`** — the aggregations that proved useful for this repo, as
   fenced commands with a line each on what they revealed, plus the **negative results** (a search
   that came back empty is knowledge, and is the one thing a saved script cannot hold). **Read, never
   executed:** vaults get synced, shared and restored from elsewhere, and "fetch code from the notes
@@ -434,13 +435,17 @@ The diff needs the same projection discipline as `sources`: hunks across a hub n
 hundreds of commits run to megabytes, so it is names first, `--stat` to size, and hunks only for the
 selection.
 
-Two edges that a branch switch makes routine rather than exotic. A node's path list can become
+One edge that history rewriting makes routine rather than exotic: a node's path list can become
 **empty** — that subsystem does not exist on this line — and the right response is to report it and
-leave the node alone: the writer refuses an empty list, and deleting the node would destroy the
-human-authored `## Notes`. And because a namespace is keyed by repo basename and remote, **all branches
-share one**, so rebuilding for a branch switch replaces the graph for the other branch. For frequent
-switching the cheaper choice is to leave the namespace on the mainline and let drift's "not an ancestor
-of HEAD" warning stand; rebuild when you intend to stay.
+leave the node alone, since the writer refuses an empty list and deleting the node would destroy the
+human-authored `## Notes`.
+
+A namespace is keyed by repo **and branch** (`synapse/{repo}@{branch}/`), so branches do not share
+one and switching between them invalidates nothing: the mainline's graph keeps describing the
+mainline, and a branch with no namespace simply has none until someone runs `/synapse-init` there.
+What still reaches this command is history moving under a graph on the branch it describes — a rebase
+onto a moved trunk, or a reset — which leaves the recorded baseline off the current line and produces
+the same "not an ancestor of HEAD" warning a branch switch used to.
 
 ## Optional tree-sitter acceleration
 

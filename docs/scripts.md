@@ -71,6 +71,51 @@ its own -- see docs/synapse-graph.md for why.
 Note for agent callers: needs the sandbox disabled (localhost REST API).
 ```
 
+## `synapse-graph-clean.sh`
+
+Removes Synapse namespaces whose branch was deleted upstream, and reports the
+ones it cannot decide about. The only destructive tool in Synapse, which is why
+it is a command you run rather than a hook that fires: these are notes in a
+permanent vault, and the system should not delete them on inference.
+
+```
+Usage: synapse-graph-clean.sh [--dry-run]
+       synapse-graph-clean.sh --help
+
+  --dry-run  report what would be removed, delete nothing.
+
+Operates on the repo containing $PWD, across every branch's namespace for it --
+not just the branch checked out now.
+
+What it does with each `synapse/{repo}@{branch}/` namespace:
+
+  remove  the branch had an upstream and it is gone -- merged and deleted, the
+          case this exists for. `git branch -vv` shows it as `[origin/x: gone]`.
+  report  the branch is absent locally and no upstream can be confirmed. That
+          covers a never-pushed branch deleted by hand, and a branch whose
+          config went with it, which are indistinguishable after the fact.
+          Reported for a human to remove, never deleted here.
+  keep    anything else, including a branch that was never pushed and still
+          exists -- work in progress, whose namespace is in active use.
+
+A `git fetch --prune` runs first unless --dry-run: without it a deleted branch
+still has a local remote-tracking ref, every namespace looks alive, and the
+command silently does nothing.
+
+In a repo with no remote there is no upstream to consult at all, so the test
+falls back to whether the local branch still exists. Without that fallback the
+first run in a remoteless repo would classify every namespace as deleted
+upstream and wipe the lot.
+
+Deletion is on-disk rather than over the REST API, which would need one call
+per note. The vault's own git history (see synapse-db-sync.sh) is the undo.
+
+Exit codes:
+  0 - ran (removed something, or found nothing to remove)
+  1 - could not run (no vault, not in a git repo, missing dependency)
+  2 - usage error
+```
+
 ## `synapse-identity.sh`
 
 Sourced by every component that has to name a Synapse namespace. One copy on

@@ -6,7 +6,7 @@ system. Auto-memory is for *how to work with this user*; the Vault is for durabl
 about the work itself.
 
 It is also the host for [Synapse Graph](synapse-graph.md), which stores its per-repo code graphs here as
-ordinary notes under `synapse/{repo-name}/` rather than in a folder of their own. One store, one
+ordinary notes under `synapse/{repo}@{branch}/` rather than in a folder of their own. One store, one
 search, one sync concern.
 
 ![Synapse Vault overview](diagrams/synapse-vault-overview.png)

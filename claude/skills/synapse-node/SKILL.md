@@ -73,7 +73,7 @@ needs one.
    `built_at`, `commit`, `stale: false`, and preserving `## Notes` — belongs to
    `synapse-write-node.sh`, because a hub node's `sources` can no more be *emitted* into a tool call
    than read into a window. Let `$W` be the project's work directory,
-   `~/.claude/synapse-work/{repo-name}/`.
+   `~/.claude/synapse-work/{repo}@{branch}/`.
 
    - **Get the node's path list into a file, never into context:**
 

@@ -9,7 +9,7 @@ you can use one without the others:
 - **Synapse Vault** — an Obsidian vault holding the notes: research, decisions, project logs, design
   discussions. Cross-project by default and searchable as ordinary Markdown.
 - **Synapse Graph** — a per-repo semantic code graph, hosted *inside* the Vault under
-  `synapse/{repo-name}/`, so it is stored and searched like any other note. Dormant until
+  `synapse/{repo}@{branch}/`, so it is stored and searched like any other note. Dormant until
   `/synapse-init` is run in a repo.
 - **Synapse Tools** — the scripts, commands, skills and hooks that build and maintain both.
 
@@ -86,7 +86,7 @@ blocks.
 - `claude/bin/synapse-build-lists.sh` — enumerates tracked files (dropping binaries, lockfiles,
   minified output and submodule gitlinks) and expands `manifest.tsv` into one path list per node,
   printing `enumerated/covered/unassigned` so a bad pattern is a number rather than a silent gap.
-  Works out of `$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo-name}/` — never the repo,
+  Works out of `$SYNAPSE_WORK_DIR`, default `~/.claude/synapse-work/{repo}@{branch}/` — never the repo,
   since these scripts run from inside it.
 - `claude/bin/synapse-write-node.sh` — writes one node: hashes every source, computes
   `sources_digest`, records the baseline `commit`, slices the `crux` out of the file from a line
@@ -101,6 +101,23 @@ blocks.
   (source path → owning node filenames, plus `_unassigned`).
 - `claude/bin/synapse-build-project-index.sh` — builds `Index.md`, reading each bullet's headline back
   from that node's own `summary` field, so the map cannot describe a node as it used to be.
+- `claude/bin/synapse-identity.sh` — sourced, not executed: the one place a namespace is named
+  (`{repo}@{branch}`). The repo half comes from the *remote's* basename rather than the directory, so a
+  linked worktree and its parent agree; the branch half from `git symbolic-ref --short HEAD`, which
+  reports an unborn branch correctly and fails on a detached HEAD instead of returning the literal
+  string `HEAD` the way `rev-parse --abbrev-ref` does. Worktrees need no handling of their own, because
+  git refuses one branch in two worktrees of a repository — so a branch already names at most one
+  checkout, and `.git`-file parsing, `commondir` walking and worktree-versus-submodule discrimination
+  all become unnecessary rather than merely handled.
+- `claude/bin/synapse-graph-clean.sh` — the only destructive tool here, and a command you run rather
+  than a hook that fires. Removes namespaces whose branch had an upstream that is now gone (what
+  `git branch -vv` shows as `[origin/x: gone]`), after a `git fetch --prune` — without which a deleted
+  branch still has a local tracking ref and the whole thing silently no-ops. Anything it cannot
+  positively confirm is *reported* rather than deleted: a branch absent locally whose upstream config
+  went with it, or a namespace with no `branch` field. In a repo with no remote there is no upstream to
+  consult, so it falls back to local branch existence — without that fallback the first run in a
+  remoteless repo would read every namespace as deleted-upstream and wipe the lot. `--dry-run` prints
+  the same verdicts and touches nothing.
 - `claude/bin/synapse-tags.sh` — optional tree-sitter acceleration for clustering, regeneration and
   the `_unassigned` sweep: looks up a file's extension in a self-populating grammar registry
   (`~/.claude/synapse-grammars.conf`), clones and builds a native grammar on first need, and prints
