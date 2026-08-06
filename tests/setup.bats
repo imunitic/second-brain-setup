@@ -43,16 +43,18 @@ hook_count() {
   [ -f "$HOME/.claude/skills/synapse-task/SKILL.md" ]
   [ -f "$HOME/.claude/skills/synapse-query/SKILL.md" ]
 
-  # Shared references. Asserted by name rather than by counting files, because the
-  # failure this guards against is one of them silently not installing -- the same
-  # shape as the bin/ script that was missed until the installer globbed instead of
-  # naming each file.
-  [ -f "$HOME/.claude/synapse-reference/node-format.md" ]
-  [ -f "$HOME/.claude/synapse-reference/orientation.md" ]
-  # ...and they must NOT land in commands/, where a .md file registers as a slash
-  # command. These are read at a step, not invoked.
-  [ ! -e "$HOME/.claude/commands/node-format.md" ]
-  [ ! -e "$HOME/.claude/commands/orientation.md" ]
+  # The knowledge skills. Asserted by name because the failure this guards against is
+  # one of them silently not installing -- the same shape as the bin/ script that was
+  # missed until the installer globbed instead of naming each file, which is now also
+  # how skills are installed.
+  [ -f "$HOME/.claude/skills/synapse-node-format/SKILL.md" ]
+  [ -f "$HOME/.claude/skills/synapse-orientation/SKILL.md" ]
+
+  # Every skill in the repo installs, without the installer naming any of them. This
+  # is the assertion that would have caught a new skill being added and forgotten.
+  for d in "$REPO_ROOT"/claude/skills/*/; do
+    [ -f "$HOME/.claude/skills/$(basename "$d")/SKILL.md" ]
+  done
 
   [ -f "$HOME/.claude/bin/synapse-tags.sh" ]
   [ -x "$HOME/.claude/bin/synapse-tags.sh" ]

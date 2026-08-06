@@ -36,12 +36,13 @@ your call).
   delegate to `synapse-note.md --task` and `skills/synapse-task/`, not a separate mechanism.
 - `claude/skills/synapse-task/` — proactive task-status tracking.
 
-`claude/synapse-reference/` holds documents that several components read but none owns:
-`node-format.md` (the node contract, shared by `/synapse-init`, the `synapse-node` skill and
-`/synapse-rebuild`, all of which write nodes) and `orientation.md` (how to work out where meaning
-lives in an unfamiliar tree, shared by a first build and rebuild's re-orient class). Deliberately not
-under `commands/`, where a `.md` file would register as a slash command — these are read at a step,
-not invoked.
+Two of the skills are knowledge rather than procedure, holding what several components need but none
+owns: `claude/skills/synapse-node-format/` (the node contract, loaded by `/synapse-init`, the
+`synapse-node` skill and `/synapse-rebuild`, all of which write nodes) and
+`claude/skills/synapse-orientation/` (how to work out where meaning lives in an unfamiliar tree,
+loaded by a first build and by rebuild's re-orient class, and useful on its own terms). A skill does
+not have to *do* something — being loadable knowledge is the point, and it is what keeps one
+description of the node format instead of three.
 
 ## Synapse Graph — the per-repo code graph
 

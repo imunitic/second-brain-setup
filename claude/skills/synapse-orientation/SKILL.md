@@ -1,11 +1,17 @@
+---
+name: synapse-orientation
+description: How to work out where meaning lives in a codebase you have not seen before — four questions in order, and the cheap commands that answer each, plus the optional tree-sitter grammar discovery. Use when clustering a repo into Synapse graph nodes for the first time, when re-deriving a node's premises in /synapse-rebuild's re-orient class, or any time you need to orient in an unfamiliar tree before making claims about it.
+---
+
 # Orienting in an unfamiliar repo
 
-Shared reference. Read by `/synapse-init` (its orientation step) and by `/synapse-rebuild` when a
-node lands in the *re-orient* class and its premises have to be re-derived rather than patched.
+Loaded by `/synapse-init` at its orientation step, and by `/synapse-rebuild` when a node lands in
+the *re-orient* class and its premises have to be re-derived rather than patched. Useful on its own
+terms too: nothing here is Synapse-specific except what you do with the answers.
 
-It lives here rather than inside either of them because it is technique, not procedure: how to find
-where meaning lives in a tree you have never seen. Both callers need exactly the same technique, and
-a copy in each is how the two start giving different advice.
+It is a skill rather than a section inside either caller because it is technique, not procedure —
+how to find where meaning lives in a tree you have never seen. Both callers need exactly the same
+technique, and a copy in each is how the two start giving different advice.
 
 The goal is not a
 summary of every file; it is learning *where meaning lives in this particular tree* well enough

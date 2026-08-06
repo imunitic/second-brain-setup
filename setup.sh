@@ -12,7 +12,7 @@ DEST="$HOME/.claude"
 
 command -v jq >/dev/null || { echo "jq is required. Install it first (e.g. brew install jq)." >&2; exit 1; }
 
-mkdir -p "$DEST/hooks" "$DEST/commands" "$DEST/skills/synapse-task" "$DEST/skills/synapse-node" "$DEST/skills/synapse-query" "$DEST/bin" "$DEST/synapse-reference"
+mkdir -p "$DEST/hooks" "$DEST/commands" "$DEST/bin"
 
 echo "== CLAUDE.md =="
 if [ -f "$DEST/CLAUDE.md" ] && ! diff -q "$SRC/CLAUDE.md" "$DEST/CLAUDE.md" >/dev/null 2>&1; then
@@ -77,14 +77,16 @@ echo "== hooks/commands/skills =="
 cp "$SRC/hooks/"*.sh "$DEST/hooks/"
 chmod +x "$DEST/hooks/"*.sh
 cp "$SRC/commands/"*.md "$DEST/commands/"
-cp "$SRC/skills/synapse-task/SKILL.md" "$DEST/skills/synapse-task/SKILL.md"
-cp "$SRC/skills/synapse-node/SKILL.md" "$DEST/skills/synapse-node/SKILL.md"
-cp "$SRC/skills/synapse-query/SKILL.md" "$DEST/skills/synapse-query/SKILL.md"
-# Shared references, deliberately NOT under commands/: a file there registers as a
-# slash command, and these are read at a step, not invoked. Globbed rather than
-# named, so adding one needs no installer change -- the mistake the bin/ glob was
-# introduced to fix.
-cp "$SRC/synapse-reference/"*.md "$DEST/synapse-reference/"
+# Every skill directory, discovered rather than listed. Naming each one meant a new
+# skill silently did not install until someone remembered to add a line here --
+# the same mistake the bin/ glob was introduced to fix, and it had already been
+# made once by the time there were three of them.
+for skill_dir in "$SRC/skills/"*/; do
+    skill_name="$(basename "$skill_dir")"
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    mkdir -p "$DEST/skills/$skill_name"
+    cp "$skill_dir/SKILL.md" "$DEST/skills/$skill_name/SKILL.md"
+done
 # Glob rather than naming each script, matching how hooks/ is copied above --
 # naming them individually meant a newly added script silently didn't install.
 cp "$SRC/bin/"*.sh "$DEST/bin/"

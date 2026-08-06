@@ -130,9 +130,9 @@ emit into tool calls than read into a window. Never hand-author those.
    summary of every file; it is learning *where meaning lives in this particular tree* well enough to
    cluster it and then write about it.
 
-   **Read `~/.claude/synapse-reference/orientation.md`** for the four questions to ask, in order, and
-   the cheap commands that answer each. It is shared with `/synapse-rebuild`'s re-orient class, which
-   needs the same technique.
+   **Load the `synapse-orientation` skill** for the four questions to ask, in order, and the cheap
+   commands that answer each. It is shared with `/synapse-rebuild`'s re-orient class, which needs the
+   same technique.
 4. **Cluster into nodes — write `manifest.tsv`, the seam.** Group what you learned into a few dozen
    readable nodes, not one per file — same density Graft aims for. A node is a subsystem or concept,
    not a file; a file may legitimately belong to more than one node's `sources` when it's genuinely
@@ -161,11 +161,11 @@ emit into tool calls than read into a window. Never hand-author those.
    `$SYNAPSE_WORK_DIR/b-NN.md` (matching its `lists/NN.txt`), then run `synapse-push-nodes.sh`,
    which calls `synapse-write-node.sh` per node.
 
-   **Read `~/.claude/synapse-reference/node-format.md` before writing the first one.** It is the
-   single description of the node contract — summary, the crux *pointer*, `## Links`, `grounded_in`,
-   what the writer adds and what it refuses — shared with the `synapse-node` skill and
-   `/synapse-rebuild`, which write the same artifact. Do not re-derive the format from an existing
-   node: a node you are reading may predate a change to it.
+   **Load the `synapse-node-format` skill before writing the first one.** It is the single
+   description of the node contract — summary, the crux *pointer*, `## Links`, `grounded_in`, what
+   the writer adds and what it refuses — shared with the `synapse-node` skill and `/synapse-rebuild`,
+   which write the same artifact. Do not re-derive the format from an existing node: a node you are
+   reading may predate a change to it.
 6. **Write `_index.json`** — mechanics, run `synapse-build-index.sh`. It emits
    `synapse/{repo}@{branch}/_index.json`, mapping every source path used
    above to the list of node **filenames, including the `.md` extension** (matching the design

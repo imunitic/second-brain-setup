@@ -70,8 +70,8 @@ needs one.
 
 4. **Regeneration (only if step 1 or 2 found the node stale).** You re-author the prose; a script
    writes the file. **The node contract itself — frontmatter fields, the crux pointer, `## Links`,
-   `grounded_in` — is in `~/.claude/synapse-reference/node-format.md`**, shared with `/synapse-init`
-   and `/synapse-rebuild`. What follows here is only what differs when *re*-authoring an existing
+   `grounded_in` — is the `synapse-node-format` skill**, shared with `/synapse-init` and
+   `/synapse-rebuild`. What follows here is only what differs when *re*-authoring an existing
    node rather than writing a new one. Everything mechanical — hashes, `sources_digest`, the `## Sources` mirror,
    `built_at`, `commit`, `stale: false`, and preserving `## Notes` — belongs to
    `synapse-write-node.sh`, because a hub node's `sources` can no more be *emitted* into a tool call

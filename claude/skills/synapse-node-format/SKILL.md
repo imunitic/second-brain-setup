@@ -1,7 +1,12 @@
+---
+name: synapse-node-format
+description: The contract for a Synapse code-graph node — frontmatter fields, the crux pointer, `## Links`, `grounded_in`, `## Sources`, and what `synapse-write-node.sh` adds or refuses. Load before authoring or regenerating any node, whether from /synapse-init's first build, /synapse-rebuild's triage, or the synapse-node skill's lazy regeneration. Not for reading the graph (that is synapse-query) or for task notes in the vault (that is synapse-task).
+---
+
 # What a node is, and how to author one
 
-Shared reference for every component that writes a node: `/synapse-init` (first build), the
-`synapse-node` skill (Tier 2 lazy regeneration), and `/synapse-rebuild` (reseat, patch, re-orient).
+Every component that writes a node loads this: `/synapse-init` (first build), the `synapse-node`
+skill (Tier 2 lazy regeneration), and `/synapse-rebuild` (reseat, patch, re-orient).
 
 All three write the same artifact, so the format belongs in one place rather than being restated
 wherever it is used. What stays with each caller is what is genuinely specific to it — the skill's
