@@ -766,10 +766,36 @@ slice_digest() { # slice_digest <path> <start> <end>
   run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
   [ "$status" -eq 0 ]
 
-  cache="$VAULT/synapse/$(repo_name)/_tags_cache.json"
+  cache="$HOME/.claude/synapse-work/$(repo_name)/_tags_cache.json"
   [ -f "$cache" ]
   [[ "$(jq -r '."src/foo.ml".tags' "$cache")" == *"FAKE_NAME"* ]]
   [ "$(jq -r '."src/foo.ml".unsupported' "$cache")" = "false" ]
+}
+
+@test "the tags cache lands in the work dir, never in the vault" {
+  # It is derived, disposable, and ~942 MB at syrius3 scale against
+  # _index.json's 26 MB -- and the vault is version-controlled, so a copy per
+  # rebuild would end up in its history. Asserted as an absence in the vault
+  # rather than only a presence in the work dir: the failure worth catching is
+  # a second call site that keeps writing the old location.
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.claude/synapse-work/$(repo_name)/_tags_cache.json" ]
+  [ -z "$(find "$VAULT" -name '_tags_cache.json' -print -quit)" ]
+}
+
+@test "the tags cache honours SYNAPSE_WORK_DIR" {
+  make_repo
+  printf 'src/foo.ml\n' > "$PATHS"
+
+  export SYNAPSE_WORK_DIR="$TEST_HOME/elsewhere"
+  run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
+  [ "$status" -eq 0 ]
+  [ -f "$SYNAPSE_WORK_DIR/_tags_cache.json" ]
+  [ ! -f "$HOME/.claude/synapse-work/$(repo_name)/_tags_cache.json" ]
 }
 
 @test "rewriting a node with an unchanged source re-tags nothing" {
@@ -790,7 +816,7 @@ slice_digest() { # slice_digest <path> <start> <end>
   export SYNAPSE_DISABLE_SYMBOL_CACHE=1
   run run_write --title "Widget core" --paths "$PATHS" --body "$BODY"
   [ "$status" -eq 0 ]
-  [ ! -f "$VAULT/synapse/$(repo_name)/_tags_cache.json" ]
+  [ ! -f "$HOME/.claude/synapse-work/$(repo_name)/_tags_cache.json" ]
   [ ! -s "$FAKE_TS_LOG" ]
 }
 

@@ -35,6 +35,12 @@
 # Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 # need the network sandbox disabled, or curl fails with exit 7 and no message.
 #
+# As a byproduct it refreshes $SYNAPSE_WORK_DIR/_tags_cache.json (default
+# ~/.claude/synapse-work/{repo}@{branch}/) for the node's sources, so
+# `synapse-query.sh symbol` is a cache read. That file is derived and
+# disposable, which is why it lives beside the work dir rather than in the
+# version-controlled vault. Never fatal; SYNAPSE_DISABLE_SYMBOL_CACHE skips it.
+#
 # Exit codes:
 #   0 - node written; prints "<file>\t<n> files\t<digest>"
 #   1 - could not run (missing dependency, no vault, remote mismatch, PUT failed)
@@ -244,12 +250,16 @@ hashes_n="$(wc -l < "$work/hashes.txt" | tr -d ' ')"
 # just computed above rather than re-deriving its own staleness signal. Never
 # fatal: a failure here should not block writing the node itself. See
 # docs/synapse-graph.md's "Exact-symbol lookup" section for the full design.
+#
+# It lands in the work dir, not the vault: derived, disposable, and ~942 MB at
+# syrius3 scale against _index.json's 26 MB, so keeping it in a version-
+# controlled vault would commit a fresh copy on every rebuild.
 if [[ -z "${SYNAPSE_DISABLE_SYMBOL_CACHE:-}" ]]; then
     tags_cache_sh="$HOME/.claude/bin/synapse-tags-cache.sh"
     if [[ -x "$tags_cache_sh" ]]; then
         paste "$work/paths.txt" "$work/hashes.txt" > "$work/paths-hashes.tsv"
         "$tags_cache_sh" --repo-root "$REPO_ROOT" \
-            --cache "$VAULT/synapse/$REPO_NAME/_tags_cache.json" \
+            --cache "${SYNAPSE_WORK_DIR:-$HOME/.claude/synapse-work/$REPO_NAME}/_tags_cache.json" \
             --paths "$work/paths-hashes.tsv" \
             || echo "synapse-write-node: tags cache refresh failed (non-fatal)" >&2
     fi

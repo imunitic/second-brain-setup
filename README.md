@@ -138,8 +138,8 @@ blocks.
   `tree-sitter tags` output (definitions plus name-based call references). Fails soft on any missing
   piece (`tree-sitter`, a C compiler, an unsupported language) — every caller falls back to reading the
   file directly, exactly as if this script did not exist.
-- `claude/bin/synapse-tags-cache.sh` — keeps `synapse/{project}/_tags_cache.json` (`path → {hash,
-  tags}`) current for a set of files, piggybacked on the same per-file hash comparison node
+- `claude/bin/synapse-tags-cache.sh` — keeps `$SYNAPSE_WORK_DIR/_tags_cache.json` (`path → {hash,
+  tags}`, default `~/.claude/synapse-work/{repo}@{branch}/`) current for a set of files, piggybacked on the same per-file hash comparison node
   regeneration already performs rather than a separate staleness pass: unchanged paths are skipped,
   changed-or-missing ones are (re-)tagged in parallel via `xargs -P` (capped at the machine's core
   count), each worker writing its own result to a private temp file before one sequential merge writes

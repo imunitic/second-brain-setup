@@ -29,7 +29,7 @@ better than prose.
 | `_index.json` | Source path → owning node filenames, plus `_unassigned`. Machine-only. |
 | `Index.md` | The node map, plus the `remote` and `branch` identity fields verified before any read or write. |
 | `_manifest.tsv` · `_profile.txt` | Kept for the next rebuild. |
-| `_tags_cache.json` | `path → {hash, tags, unsupported}`. Machine-only and never authoritative. |
+| `_tags_cache.json` | `path → {hash, tags, unsupported}`. Machine-only and never authoritative — so it lives in `$SYNAPSE_WORK_DIR`, not the vault. |
 | `synapse-query.sh` | Projected reads — `body`, `sources`, `field`. Reads the expensive parts internally and prints only what was asked for. |
 | `synapse-query.sh symbol` | Exact-name definition and reference lookup: a cache read, with a lazy parallel backfill on a miss. |
 | `synapse-node` skill | Tier 2 — verify at read time, then regenerate lazily. |
@@ -556,13 +556,23 @@ file(s) to look in, turning "grep within this known file" into an exact `file:li
 name. Set `SYNAPSE_DISABLE_SYMBOL_CACHE` (any value) to turn it off entirely.
 
 This is deliberately not a `wiring.json`-equivalent — no whole-repo persisted call graph, no new
-staleness tier. It's a per-project cache, `synapse/{project}/_tags_cache.json` (`path → {hash,
-tags}`), populated as a byproduct of work that already happens: `synapse-tags.sh` already runs over a
+staleness tier. It's a per-project cache, `$SYNAPSE_WORK_DIR/_tags_cache.json` (`path → {hash,
+tags}`, default `~/.claude/synapse-work/{repo}@{branch}/`), populated as a byproduct of work that
+already happens: `synapse-tags.sh` already runs over a
 node's `sources` at build/regeneration time for clustering signal, and this persists that output
 instead of discarding it. The cache's freshness rides entirely on the same per-file git-hash
 comparison a node regeneration already performs — a changed hash re-tags just that file; an unchanged
 one is skipped — so there's no separate invalidation logic to maintain, and the cache can never
 disagree with the node it belongs to.
+
+**It sits in the work dir, not the vault, and that is a correction rather than a detail.** It was
+originally written to `synapse/{repo}@{branch}/_tags_cache.json` alongside `_index.json`, which put a
+derived artifact in a store whose whole purpose is durable, human-browsable, version-controlled
+content. The description that was always attached to it — machine-only, never authoritative — is the
+description of a disposable cache. The cost showed up at scale: on syrius3 it is ~942 MB against
+`_index.json`'s 26 MB, and every rebuild would commit a fresh copy of it into the vault's git
+history. Deleting it costs exactly one re-tag, which is the definition of the wrong thing to version.
+`synapse-tags-cache.sh` already took `--cache <path>`, so only the two hardcoded call sites moved.
 
 **Query time is a pure cache read.** `symbol` resolves the node's `sources`, looks up each path in the
 cache, and filters for an exact match on the requested name — no tree-sitter invocation at all when

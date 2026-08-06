@@ -210,11 +210,16 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
 <node> may be given with or without the trailing `.md`.
 
 `symbol` is a name-based, not type-resolved, lookup backed by a per-project
-tags cache (synapse/{project}/_tags_cache.json) kept current as a byproduct
-of node build/regeneration, with any file the cache is missing tagged
-lazily on the spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable
-entirely -- see docs/synapse-graph.md's "Exact-symbol lookup" section for
-the full design.
+tags cache ($SYNAPSE_WORK_DIR/_tags_cache.json, default
+~/.claude/synapse-work/{repo}@{branch}/) kept current as a byproduct of node
+build/regeneration, with any file the cache is missing tagged lazily on the
+spot. Set SYNAPSE_DISABLE_SYMBOL_CACHE (any value) to disable entirely --
+see docs/synapse-graph.md's "Exact-symbol lookup" section for the full design.
+
+That cache sits beside the work dir rather than in the vault because it is
+derived, disposable and large: at syrius3 scale ~942 MB against _index.json's
+26 MB, and the vault is version-controlled, so every rebuild would commit a
+fresh copy of it into the vault's history. Deleting it costs one re-tag.
 
 `stale` re-hashes what a node claims; `drift` diffs its recorded `commit` against
 HEAD, so only `drift` sees added, deleted and renamed paths. Neither pulls.
@@ -374,6 +379,12 @@ display. Same path and range checks as the crux, with a 40-line cap.
 
 Writes to the vault over the Obsidian Local REST API on 127.0.0.1. Agent callers
 need the network sandbox disabled, or curl fails with exit 7 and no message.
+
+As a byproduct it refreshes $SYNAPSE_WORK_DIR/_tags_cache.json (default
+~/.claude/synapse-work/{repo}@{branch}/) for the node's sources, so
+`synapse-query.sh symbol` is a cache read. That file is derived and
+disposable, which is why it lives beside the work dir rather than in the
+version-controlled vault. Never fatal; SYNAPSE_DISABLE_SYMBOL_CACHE skips it.
 
 Exit codes:
   0 - node written; prints "<file>\t<n> files\t<digest>"
