@@ -164,6 +164,63 @@ run_synapse_tags() {
   [ "$(grep -c '^/' <<< "$output")" -eq 1 ]
 }
 
+@test "--paths: a ONE-path list still gets a path line and indented tags" {
+  # The real CLI changes shape here: two or more paths get path lines and
+  # indentation, exactly one gets neither -- bare tags, identical to
+  # single-file form. A chunk of one is the common case rather than a corner
+  # (one source changed, re-tag it), and left un-normalised an attributing
+  # caller reads the first tag line as a path, finds the real path missing, and
+  # concludes the file could not be parsed. That shipped once already: it cached
+  # a perfectly readable file as `unsupported: true` with no tags.
+  printf 'let a = 1\n' > "$TEST_HOME/a.ml"
+  printf '%s\n' "$TEST_HOME/a.ml" > "$TEST_HOME/list.txt"
+  write_registry '{"ml": {"repo": "https://example.invalid/tree-sitter-ocaml", "scope": "source.ocaml"}}'
+
+  run run_synapse_tags --paths "$TEST_HOME/list.txt"
+  [ "$status" -eq 0 ]
+  [ "$(head -1 <<< "$output")" = "$TEST_HOME/a.ml" ]
+  [ "$(grep -c '^	' <<< "$output")" -eq 1 ]
+  [[ "$output" == *"FAKE_NAME"* ]]
+}
+
+@test "--paths: one path and many paths produce the same shape per file" {
+  # Asserted as an equivalence rather than two separate expectations, so the
+  # normalisation cannot drift in only one direction.
+  printf 'let a = 1\n' > "$TEST_HOME/a.ml"
+  printf 'let b = 2\n' > "$TEST_HOME/b.ml"
+  write_registry '{"ml": {"repo": "https://example.invalid/tree-sitter-ocaml", "scope": "source.ocaml"}}'
+
+  printf '%s\n' "$TEST_HOME/a.ml" > "$TEST_HOME/one.txt"
+  run run_synapse_tags --paths "$TEST_HOME/one.txt"
+  [ "$status" -eq 0 ]
+  local alone="$output"
+
+  printf '%s\n%s\n' "$TEST_HOME/a.ml" "$TEST_HOME/b.ml" > "$TEST_HOME/two.txt"
+  run run_synapse_tags --paths "$TEST_HOME/two.txt"
+  [ "$status" -eq 0 ]
+  # a.ml's slice of the two-path output: its path line plus the indented lines
+  # up to the next unindented one.
+  local together
+  together="$(awk -v p="$TEST_HOME/a.ml" '
+    $0 == p { on = 1; print; next }
+    on && /^\t/ { print; next }
+    on { exit }' <<< "$output")"
+  [ "$alone" = "$together" ]
+}
+
+@test "--paths: a one-path list whose extension has no grammar still exits 1" {
+  # The normalisation must not manufacture a path line for a file that was
+  # never parseable -- that would turn "no grammar" into "parsed, no tags",
+  # which is exactly the distinction `unsupported` rests on.
+  printf 'x\n' > "$TEST_HOME/one.zzz"
+  printf '%s\n' "$TEST_HOME/one.zzz" > "$TEST_HOME/list.txt"
+  write_registry '{}'
+
+  run run_synapse_tags --paths "$TEST_HOME/list.txt"
+  [ "$status" -eq 1 ]
+  [ -z "$(grep -v '^synapse-tags:' <<< "$output")" ]
+}
+
 @test "--paths: no usable grammar for anything in the list exits 1" {
   printf 'x\n' > "$TEST_HOME/one.zzz"
   printf '%s\n' "$TEST_HOME/one.zzz" > "$TEST_HOME/list.txt"

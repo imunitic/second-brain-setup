@@ -14,30 +14,28 @@ set -euo pipefail
 
 [ -n "${FAKE_TS_LOG:-}" ] && printf '%s\n' "$*" >> "$FAKE_TS_LOG"
 
-# The extensions this fake pretends to have a grammar for. Anything else is
-# skipped silently in batch mode, which is how a test exercises the "no grammar
-# for .zzz" path: the real CLI warns on stderr and synapse-tags.sh discards it.
-tags_for() { # tags_for <path>
+# Tag lines for one path, UNINDENTED and with no path line -- the caller adds
+# both when the batch shape calls for them. Returns 1 when this fake pretends to
+# have no grammar for the extension, which is a different thing from returning
+# no tags: the first is absent from batch output entirely, the second still gets
+# its path line, and that distinction is what `unsupported` rests on.
+emit_tags() { # emit_tags <path>
   local p="$1" name
   case "$p" in
     *.ml|*.java|*.py) ;;
-    *) return 0 ;;
+    *) return 1 ;;
   esac
-  printf '%s\n' "$p"
-  # A file containing `notags` parses fine and simply has nothing in it. The
-  # real CLI still prints its path line, and that shape -- present but with no
-  # tags under it -- is what tells a caller "parsed, empty" apart from "no
-  # grammar", which is absent from the output entirely.
+  # A file containing `notags` parses fine and simply has nothing in it.
   if [ -f "$p" ] && LC_ALL=C grep -qx 'notags' "$p" 2>/dev/null; then
     return 0
   fi
-  printf '\tFAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
+  printf 'FAKE_NAME\t | function\tdef (0, 0) - (0, 1) `fake source line`\n'
   [ -f "$p" ] || return 0
   while IFS= read -r line; do
     case "$line" in
       symbol:*) name="${line#symbol:}"
                 [ -n "$name" ] || continue
-                printf '\t%s\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' "$name" ;;
+                printf '%s\t | function\tdef (0, 0) - (0, 1) `fake source line`\n' "$name" ;;
     esac
   done < "$p"
 }
@@ -48,9 +46,20 @@ case "${1:-}" in
     printf '{}' > "$HOME/.config/tree-sitter/config.json"
     ;;
   tags)
-    # Batch form: emit the real CLI's attributable shape -- an unindented path
-    # line, then that path's tab-indented tags.
     if [ "${2:-}" = "--paths" ] && [ -n "${3:-}" ]; then
+      # THE REAL CLI CHANGES SHAPE AT ONE PATH, and this fake reproduces that
+      # deliberately. Given a list of two or more it prints an unindented path
+      # line followed by that path's tab-indented tags; given a list of exactly
+      # ONE it prints neither -- just the bare tags, identical to single-file
+      # form. Verified against tree-sitter 0.25.10.
+      #
+      # An earlier version of this fake always printed path lines, and that lie
+      # let a real bug ship: a caller attributing batch output saw no path line
+      # for a one-file chunk, concluded the file was absent from the output, and
+      # cached a perfectly parseable file as `unsupported: true`. A one-file
+      # chunk is the COMMON case -- one source changed, re-tag it -- so the fake
+      # has to be honest about the shape or the suite cannot see the failure.
+      n_paths="$(LC_ALL=C awk 'NF { n++ } END { print n + 0 }' "$3")"
       while IFS= read -r p; do
         [ -n "$p" ] || continue
         # Logged per path as well as per invocation: once a caller batches, the
@@ -59,7 +68,12 @@ case "${1:-}" in
         # asserting. The chunk list itself lives in a work dir that is gone by
         # the time the test looks.
         [ -n "${FAKE_TS_LOG:-}" ] && printf 'path %s\n' "$p" >> "$FAKE_TS_LOG"
-        tags_for "$p"
+        if [ "$n_paths" -eq 1 ]; then
+          emit_tags "$p" || true
+        elif out="$(emit_tags "$p")"; then
+          printf '%s\n' "$p"
+          printf '%s' "$out" | LC_ALL=C awk 'NF { print "\t" $0 }'
+        fi
       done < "$3"
     else
       # Single-file form: --scope <scope> <file>. No path line, because the

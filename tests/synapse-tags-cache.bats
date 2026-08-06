@@ -202,6 +202,33 @@ write_sample_files() { # write_sample_files <count>
   [ "$(awk -F'\t' '$1 == "AlphaOnly"' <<< "$output" | wc -l | tr -d ' ')" -eq 1 ]
 }
 
+@test "a single file needing tagging is cached with its tags, not as unsupported" {
+  # The regression this batching shipped with. One changed file is the COMMON
+  # case, and the real CLI drops path lines and indentation for a one-path list
+  # -- so attribution saw the path as absent from the output and recorded a
+  # perfectly readable file as `unsupported: true` with empty tags. Reported by
+  # `synapse-query.sh symbol` as "not checked", and re-tagged on every call
+  # forever, since an unsupported entry that never gains tags never settles.
+  make_repo
+  write_sample_files 3
+  run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+
+  printf 'let x_1 = 999 (* changed *)\n' > "$REPO/sample_1.ml"
+  new_hash="$(git -C "$REPO" hash-object "$REPO/sample_1.ml")"
+  sed_i "s#^sample_1.ml	.*#sample_1.ml	$new_hash#" "$TEST_HOME/paths.tsv"
+
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '."sample_1.ml".unsupported' "$TEST_HOME/_tags_cache.json")" = "false" ]
+  [[ "$(jq -r '."sample_1.ml".tags' "$TEST_HOME/_tags_cache.json")" == *"FAKE_NAME"* ]]
+
+  # And it has genuinely settled: a third run re-tags nothing.
+  : > "$FAKE_TS_LOG"
+  run run_cache --repo-root "$REPO" --cache "$TEST_HOME/_tags_cache.json" --paths "$TEST_HOME/paths.tsv"
+  [ "$status" -eq 0 ]
+  [ ! -s "$FAKE_TS_LOG" ]
+}
+
 @test "several files needing tagging at once: every one ends up correctly cached" {
   make_repo
   write_sample_files 6

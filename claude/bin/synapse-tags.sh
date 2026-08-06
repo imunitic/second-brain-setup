@@ -150,9 +150,32 @@ if [ "$MODE" = "batch" ]; then
 
   [ "$ready" -gt 0 ] || exit 1
 
+  # THE CLI CHANGES OUTPUT SHAPE AT ONE PATH, and this normalises it away.
+  # Given two or more paths tree-sitter prints an unindented path line followed
+  # by that path's tab-indented tags; given exactly ONE it prints neither, just
+  # the bare tags -- indistinguishable from single-file form (verified against
+  # tree-sitter 0.25.10). Callers batch by chunk, and a chunk of one is the
+  # common case, not a corner: one source file changed, re-tag it. Left
+  # un-normalised, an attributing caller reads the first tag line as a path,
+  # finds the real path absent from the output, and concludes the file could
+  # not be parsed -- caching a perfectly readable file as `unsupported`.
+  #
+  # So the contract this script advertises ("an unindented line is a path, the
+  # tab-indented lines under it are that path's tags") is made true here rather
+  # than in each caller, where three of them would have had to get it right.
+  n_paths="$(LC_ALL=C awk 'NF { n++ } END { print n + 0 }' "$PATHS_FILE")"
+
   # stderr discarded: tree-sitter emits an eight-line warning per unsupported
   # FILE, and the per-extension lines above already said it once.
-  tree-sitter tags --paths "$PATHS_FILE" 2>/dev/null
+  if [ "$n_paths" -eq 1 ]; then
+    # The grammar check above already exited 1 if this one file's extension had
+    # none, so reaching here means it is genuinely parseable and deserves its
+    # path line even when it yields no tags at all.
+    LC_ALL=C awk 'NF { print; exit }' "$PATHS_FILE"
+    tree-sitter tags --paths "$PATHS_FILE" 2>/dev/null | LC_ALL=C awk '{ print "\t" $0 }'
+  else
+    tree-sitter tags --paths "$PATHS_FILE" 2>/dev/null
+  fi
   exit 0
 fi
 
