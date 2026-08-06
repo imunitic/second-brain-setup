@@ -16,7 +16,10 @@ better than prose.
 
 | Box | What it does |
 |---|---|
-| **model** — orient and cluster | Reads the repo, aggregates paths, and decides what the nodes should be. The one genuinely judgment-shaped step in a build. |
+| `synapse-vocab.sh` | Reduces the repo to `group ⇥ word ⇥ count` from symbol names alone. The orientation evidence, derived rather than explored. |
+| **model** — orient and cluster | Reads the vocabulary table and decides what the nodes should be. The one genuinely judgment-shaped step in a build. |
+| `synapse-gate.sh` | Flags a cluster whose top terms are all corpus-common — it owns no vocabulary, so it is not a concept. Runs before any prose is paid for. |
+| `synapse-rank.sh` | Which of a cluster's files are worth reading, in tiers. Reading order only; `sources` stays exhaustive. |
 | **manifest.tsv** — the seam | `title ⇥ include-ERE ⇥ exclude-ERE`, one line per node. The single artifact the model hands to the scripts, and the reason coverage comes out as a printed number rather than a claim. |
 | `synapse-build-lists.sh` | `git ls-files` → `all.txt`, then expands each manifest line into a path list. Prints enumerated / covered / unassigned. |
 | **model** — author node prose | Writes one body per node: summary, a crux *pointer* (never the code itself), links, and any `grounded_in` pointers. |
@@ -108,7 +111,8 @@ namespace dies with it. That is also what makes deletion safe — nothing links 
 
 Walks the repo's tracked files (`git ls-files`, so `.gitignore` exclusion is free), runs an
 orientation-then-clustering pass biased by `CLAUDE.md`/`README.md` if present (hints, never
-authoritative structure), and writes:
+authoritative structure), gates the resulting clusters on whether each owns any vocabulary of its
+own, and writes:
 
 - One node file per subsystem/concept — a few dozen per repo, not one per file — under
   `synapse/{repo}@{branch}/{Node Title}.md`. Each carries `sources` (**every** file the node covers, as

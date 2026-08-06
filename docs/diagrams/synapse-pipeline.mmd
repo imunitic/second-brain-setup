@@ -2,38 +2,57 @@
 title: Synapse — how the pieces fit
 ---
 %% Colour carries the lane: what the MODEL judges, what a SCRIPT executes, what
-%% lands in the VAULT. Subgraphs carry the phase. The seam is visible as the only
-%% two arrows that leave a yellow box for a blue one -- manifest.tsv and b-NN.md.
+%% lands in the VAULT, and what is merely DERIVED into the work dir. Subgraphs
+%% carry the phase.
+%% --
+%% Read the yellow boxes' arrows in both directions and the whole design is
+%% there. Blue enters yellow twice -- vocabulary into clustering, ranked files
+%% into authoring -- and that is the evidence a judgment is made over, derived
+%% mechanically rather than gathered by hand. Yellow leaves for blue twice --
+%% manifest.tsv and the authored bodies -- and that is the seam, the only place
+%% interpretation is handed back to the scripts. Everything else is mechanical.
 %% --
 %% Boxes carry NAMES, not descriptions. What each one actually does lives in the
 %% reference table under this diagram in docs/synapse-graph.md. A box holding four
 %% lines of mechanism is a paragraph in a rectangle: it cannot be read at a glance,
 %% which is the only thing a diagram is better at than prose. Keep labels to a name
 %% plus at most a three-word role, and put the detail in the table.
+%% --
+%% Separator lines are `%% --`, never a bare `%%`: an empty comment swallows the
+%% following newline, so the next line is parsed glued onto it -- a bare `%%`
+%% directly above `flowchart TB` fails with "Parse error on line 1: %%flowchart".
 flowchart TB
     classDef model fill:#ffec99,stroke:#e8590c,color:#1e1e1e
     classDef seam fill:#ffc9c9,stroke:#c2255c,color:#1e1e1e,stroke-width:3px
     classDef script fill:#d0ebff,stroke:#1971c2,color:#1e1e1e
     classDef vault fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+    classDef work fill:#e9ecef,stroke:#868e96,color:#1e1e1e
     classDef hook fill:#ffd8a8,stroke:#e8590c,color:#1e1e1e
     classDef cmd fill:#e5dbff,stroke:#6741d9,color:#1e1e1e
 
     subgraph BUILD["BUILD · /synapse-init"]
         direction TB
+        TAGS["synapse-tags.sh<br/><i>optional</i>"]
+        VOCAB["synapse-vocab.sh<br/>symbol vocabulary"]
         ORIENT["<b>model</b><br/>orient and cluster"]
         MANIFEST["<b>manifest.tsv</b><br/>THE SEAM"]
         LISTS["synapse-build-lists.sh<br/>enumerate and expand"]
+        GATE["synapse-gate.sh<br/>flag empty clusters"]
+        RANK["synapse-rank.sh<br/>what to read"]
         PROSE["<b>model</b><br/>author node prose"]
         PUSH["synapse-push-nodes.sh"]
         WRITE["synapse-write-node.sh<br/>hash, slice, write"]
         IDX["synapse-build-index.sh"]
         PIDX["synapse-build-project-index.sh"]
-        TAGS["synapse-tags.sh<br/><i>optional</i>"]
 
-        TAGS -.->|"clustering signal"| ORIENT
+        TAGS -->|"batched"| VOCAB
+        VOCAB -->|"evidence"| ORIENT
         ORIENT -->|"authors"| MANIFEST
         MANIFEST --> LISTS
-        MANIFEST --> PROSE
+        LISTS --> GATE
+        GATE -.->|"re-cluster"| ORIENT
+        LISTS --> RANK
+        RANK -->|"top-N"| PROSE
         LISTS -->|"path lists"| PUSH
         PROSE -->|"bodies"| PUSH
         PUSH -->|"per node"| WRITE
@@ -46,13 +65,19 @@ flowchart TB
         JSON["_index.json"]
         INDEX["Index.md"]
         AUX["_manifest.tsv · _profile.txt"]
+    end
+
+    subgraph WORK["WORK DIR · ~/.claude/synapse-work/{repo}@{branch}/"]
+        direction LR
         TAGSCACHE["_tags_cache.json"]
+        WORDS["groupwords.tsv · counts.tsv"]
     end
 
     WRITE ==>|"REST PUT"| NODE
     IDX ==> JSON
     PIDX ==> INDEX
     WRITE -.->|"byproduct"| TAGSCACHE
+    VOCAB -.-> WORDS
 
     subgraph USE["READ · DETECT · REPAIR"]
         direction TB
@@ -84,8 +109,9 @@ flowchart TB
 
     class ORIENT,PROSE model
     class MANIFEST seam
-    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,QUERY,SYMBOL,STALE2,DRIFT,GROUND,CLEAN script
-    class NODE,JSON,INDEX,AUX,TAGSCACHE vault
+    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,VOCAB,GATE,RANK,QUERY,SYMBOL,STALE2,DRIFT,GROUND,CLEAN script
+    class NODE,JSON,INDEX,AUX vault
+    class TAGSCACHE,WORDS work
     class STALE1 hook
     class REBUILD,NODESKILL cmd
 
@@ -95,6 +121,7 @@ flowchart TB
         K2["the seam"]
         K3["script — mechanics"]
         K4["vault artifact"]
+        K7["derived · disposable"]
         K5["fires automatically"]
         K6["command / skill"]
     end
@@ -102,6 +129,7 @@ flowchart TB
     class K2 seam
     class K3 script
     class K4 vault
+    class K7 work
     class K5 hook
     class K6 cmd
 
@@ -110,5 +138,6 @@ flowchart TB
     %% readable at a glance.
     style BUILD fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
     style VAULT fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
+    style WORK fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
     style USE fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
     style KEY fill:#ffffff,stroke:#adb5bd,stroke-dasharray:4 4
