@@ -20,12 +20,31 @@
 #
 # Exit codes:
 #   0 - rendered (or, for --check, everything is current)
-#   1 - a render failed, mmdc is missing, or --check found something stale
+#   1 - a render failed, npx is missing, or --check found something stale
 #   2 - usage error
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/diagrams"
 STAMPS="$DIR/.rendered"
+
+# The renderer is pinned, and invoked through npx rather than whatever `mmdc`
+# happens to be on PATH, because layout is version-dependent in ways that are
+# invisible until you look at the picture. mermaid-cli 11.4.2 (bundling mermaid
+# 11.6.0) changed how dagre breaks cycles; for synapse-pipeline.mmd -- a graph
+# with a genuine cycle, BUILD -> VAULT -> USE -> BUILD -- that reorders the
+# subgraphs into an L with a large empty quadrant.
+#
+# The empty quadrant is the symptom. The reason it matters is that GitHub
+# renders a committed .mmd natively in its file view, so each diagram is on
+# display here twice: as that native render and as the .png these docs link.
+# Those two must agree, or the repo shows a reader two different pictures of the
+# same thing. Pinning is what makes the .png reproducible and keeps it matching.
+#
+# Bisected 2026-08-06 against synapse-pipeline.mmd: 11.3.0 and 11.4.0 lay it out
+# as GitHub does, 11.4.2 does not. Worth re-checking when GitHub's own mermaid
+# moves on -- at that point the pin should follow it rather than stay put.
+MERMAID_CLI_VERSION="11.4.0"
+RENDERER=(npx --yes "@mermaid-js/mermaid-cli@$MERMAID_CLI_VERSION")
 
 usage() {
     awk '/^# Usage:/ { p = 1 } p && !/^#/ { exit } p { sub(/^# ?/, ""); print }' "$0" >&2
@@ -84,8 +103,8 @@ if [ "$MODE" = "check" ]; then
     exit 0
 fi
 
-command -v mmdc >/dev/null || {
-    echo "generate-diagrams: mmdc not found (npm i -g @mermaid-js/mermaid-cli)" >&2
+command -v npx >/dev/null || {
+    echo "generate-diagrams: npx not found (install Node.js)" >&2
     exit 1
 }
 
@@ -99,7 +118,7 @@ for src in "${SOURCES[@]}"; do
     if [ "$MODE" = "changed" ] && [ -f "$DIR/$name.png" ] && [ "$(stamp_of "$name")" = "$want" ]; then
         continue
     fi
-    mmdc --quiet -i "$src" -o "$DIR/$name.png" -b white -s 2 >/dev/null
+    "${RENDERER[@]}" --quiet -i "$src" -o "$DIR/$name.png" -b white -s 2 >/dev/null
     # Rewrite this diagram's stamp, leaving the others alone.
     if [ -f "$STAMPS" ]; then
         awk -F'\t' -v n="$name" '$1 != n' "$STAMPS" > "$STAMPS.tmp" || true

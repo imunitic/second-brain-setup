@@ -52,6 +52,13 @@ The generator hashes the **source** rather than comparing PNG bytes, because mer
 byte-reproducible across versions, fonts or platforms — a byte comparison would fail for reasons that
 have nothing to do with the diagram.
 
+For the same reason the renderer itself is **pinned** (`MERMAID_CLI_VERSION` in the generator, invoked
+via `npx` rather than whatever `mmdc` is on `PATH`): layout, not just bytes, is version-dependent.
+mermaid-cli 11.4.2 changed dagre's cycle-breaking and rearranged `synapse-pipeline.mmd` into a shape
+with a large empty quadrant. That matters beyond looks, because GitHub renders a committed `.mmd`
+natively in its file view — so every diagram here is on display twice, as that render and as the linked
+PNG, and the two must not disagree.
+
 Two things worth knowing if you edit one: mermaid puts edge labels at the midpoint, so a long label on
 a crossing edge lands on top of a box (keep labels to two or three words and put detail inside the
 node); and a `subgraph` draws a cluster box that can enclose nodes you did not put in it, which reads

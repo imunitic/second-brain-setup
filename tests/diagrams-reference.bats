@@ -92,9 +92,15 @@ stamp() { # stamp <name> -- record the CURRENT hash, as a successful render woul
 
 # mermaid-cli drives a headless Chromium that puppeteer caches under the real
 # $HOME, which common_setup swaps out -- so these two hand that one path back.
-render() { PUPPETEER_CACHE_DIR="$REAL_HOME/.cache/puppeteer" bash "$GEN_COPY" "$@"; }
+# npm's cache needs the same treatment: the generator now invokes a pinned
+# mermaid-cli via npx, which would otherwise re-download it into the throwaway
+# $HOME on every test.
+render() {
+  PUPPETEER_CACHE_DIR="$REAL_HOME/.cache/puppeteer" npm_config_cache="$REAL_HOME/.npm" \
+    bash "$GEN_COPY" "$@"
+}
 can_render() {
-  command -v mmdc >/dev/null || skip "mmdc not installed"
+  command -v npx >/dev/null || skip "npx not installed"
   [ -d "$REAL_HOME/.cache/puppeteer" ] || skip "no puppeteer chromium cache"
 }
 
