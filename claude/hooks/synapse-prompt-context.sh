@@ -1,14 +1,39 @@
 #!/bin/bash
-# UserPromptSubmit hook: inject matching Synapse nodes into context on every
-# turn, not just once at session start -- see docs/synapse-graph.md's "What
-# every prompt is told" section for the full mechanism and why. Set
+# UserPromptSubmit hook: on every turn in a repo that has a Synapse namespace,
+# state that the namespace exists and name the tools that read it. One short
+# standing line -- no search, no node list, no network. Set
 # SYNAPSE_DISABLE_PROMPT_INJECTION (any value) to disable entirely.
 #
-# Every exit path before the final output is a genuine zero/near-zero-cost
-# no-op: disabled, no prompt text, not a git repo, no Synapse namespace for
-# this repo, or nothing distinctive extracted from the prompt all skip the
-# network call entirely -- the one real cost (a single POST to the vault's
-# search endpoint) is paid only when there's an actual candidate query to run.
+# WHY A NUDGE AND NOT A SEARCH. This hook used to run the prompt through
+# synapse-tokenizer.sh, build a regexp OR-pattern, POST it to the vault's search
+# endpoint, and inject the matching node paths. Measured against a real
+# 52-node namespace, the prompt "can you explain how BatchRunner dispatches work
+# items" returned 50 of 52 nodes -- for ~1057 tokens, on every single turn.
+#
+# The cause was not a tunable: `[Ww]ork` matched 50 nodes because it matched the
+# substring inside `framework`, which appears 1392 times across the namespace's
+# `sources` lists. Word boundaries only brought the union from 50 to 25. One weak
+# term OR'd into the pattern destroys the whole query, and an ordinary sentence
+# nearly always contains one.
+#
+# It was also solving a problem that no longer exists. Discovery is now cheap and
+# precise on demand: `_index.json` answers path -> owning node for ~15 tokens
+# with nothing entering context, the tags cache answers symbol questions without
+# opening a file, and `synapse-query.sh` projects exactly the field asked for.
+# Those are pull, precise, and paid only when the question is about the codebase.
+# The search was push, imprecise, and paid on every turn -- including on "commit
+# and push". Reading the entire node map costs ~2500 tokens once, so the old hook
+# overtook that after 2.4 turns and kept charging.
+#
+# What could not be replaced by pulling is the reminder itself. A SessionStart
+# injection ages out of a long session once context is compacted; a per-turn line
+# does not. So this keeps the habit-defeating half -- reach for Synapse before
+# grep -- and drops the half that tried to guess which nodes mattered. The skills
+# already say what to do with them.
+#
+# No network, no jq-over-REST, no tokenizer: filesystem and git only. Every exit
+# path is a genuine no-op -- disabled, no prompt, not a git repo, no namespace
+# for this repo, or a namespace belonging to a different remote.
 set -uo pipefail
 
 [ -n "${SYNAPSE_DISABLE_PROMPT_INJECTION:-}" ] && exit 0
@@ -22,26 +47,15 @@ CONF="$HOME/.claude/synapse.conf"
 
 VAULT="${OBSIDIAN_VAULT_DIR:-}"
 [ -n "$VAULT" ] && [ -d "$VAULT" ] || exit 0
-
-PLUGIN_DATA="$VAULT/.obsidian/plugins/obsidian-local-rest-api/data.json"
-CERT="$HOME/.claude/obsidian-local-rest-api-ca.pem"
-[ -f "$PLUGIN_DATA" ] && [ -f "$CERT" ] || exit 0
 command -v jq >/dev/null || exit 0
-
-API_KEY="$(jq -r '.apiKey // empty' "$PLUGIN_DATA")"
-PORT="$(jq -r '.port // empty' "$PLUGIN_DATA")"
-[ -n "$API_KEY" ] && [ -n "$PORT" ] || exit 0
-BASE="https://127.0.0.1:$PORT"
 
 INPUT="$(cat)"
 
-# Field name not yet verified against a real captured UserPromptSubmit
-# payload -- `prompt` matches Claude Code's documented convention for this
-# hook event, same way `session_id` (verified, see synapse-stop-nudge.sh) and
-# `tool_input`/`tool_response` (verified, see synapse-staleness.sh) are named
-# for their events. Confirm this the first time the hook actually fires for
-# real; an empty PROMPT below fails soft (exits before any network call), so
-# a wrong field name degrades to "hook never does anything," not a crash.
+# `prompt` matches Claude Code's documented convention for this hook event, the
+# same way `session_id` (verified, see synapse-stop-nudge.sh) and
+# `tool_input`/`tool_response` (verified, see synapse-staleness.sh) are named for
+# theirs. Verified live: the hook fires with this field populated. An empty
+# PROMPT still exits silently, so a payload change degrades to "does nothing".
 PROMPT="$(printf '%s' "$INPUT" | jq -r '.prompt // empty')"
 [ -n "$PROMPT" ] || exit 0
 
@@ -56,43 +70,34 @@ REPO_ROOT="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || true)"
 # shellcheck source=/dev/null
 . "$HOME/.claude/bin/synapse-identity.sh" 2>/dev/null || exit 0
 REMOTE="$(synapse_remote "$REPO_ROOT")"
-# Detached HEAD: no branch, so no namespace to inject context from.
+# Detached HEAD: no branch, so no namespace to point at.
 REPO_NAME="$(synapse_namespace "$REPO_ROOT" 2>/dev/null)" || exit 0
 
-NS_INDEX="$VAULT/synapse/$REPO_NAME/Index.md"
+NS_DIR="$VAULT/synapse/$REPO_NAME"
+NS_INDEX="$NS_DIR/Index.md"
 [ -f "$NS_INDEX" ] || exit 0
+
+# The same remote check every other component makes before trusting a namespace:
+# two repos can share a key, and pointing at another project's graph is worse
+# than saying nothing.
 NS_REMOTE="$(grep -m1 '^remote:' "$NS_INDEX" 2>/dev/null \
   | sed -e 's/^remote: *//' -e 's/^"//' -e 's/"$//' || true)"
 [ -n "$NS_REMOTE" ] && [ "$NS_REMOTE" = "$REMOTE" ] || exit 0
 
-TOKENIZER="$HOME/.claude/bin/synapse-tokenizer.sh"
-[ -x "$TOKENIZER" ] || exit 0
-TERMS="$("$TOKENIZER" "$PROMPT")"
-[ -n "$TERMS" ] || exit 0
+# Node count, so the line says how much is actually there rather than asserting
+# a graph exists in the abstract. Index.md is excluded: it is the map, not a node.
+NODES="$(find "$NS_DIR" -maxdepth 1 -name '*.md' ! -name 'Index.md' 2>/dev/null | wc -l | tr -d ' ')"
+[ "$NODES" -gt 0 ] || exit 0
 
-REGEXP="$(printf '%s' "$TERMS" | paste -sd'|' -)"
-
-QUERY="$(jq -nc --arg glob "synapse/$REPO_NAME/*" --arg re "$REGEXP" '
-  {"and": [{"glob": [$glob, {"var": "path"}]}, {"regexp": [$re, {"var": "content"}]}]}
-')"
-
-RESULTS="$(curl -s -f --cacert "$CERT" -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/vnd.olrapi.jsonlogic+json' \
-  -X POST --data-binary "$QUERY" "$BASE/search/" 2>/dev/null || true)"
-[ -n "$RESULTS" ] || exit 0
-
-PATHS="$(printf '%s' "$RESULTS" | jq -r '.[]?.filename // empty' 2>/dev/null || true)"
-[ -n "$PATHS" ] || exit 0
-
-LIST="$(printf '%s\n' "$PATHS" | sed 's/^/  - /')"
-
-jq -n --arg ctx "Synapse nodes matching this prompt:
-$LIST
-
-Consult the relevant one(s) with synapse-query.sh body before grepping, per the synapse-query skill." '
+jq -n --arg ns "$REPO_NAME" --arg n "$NODES" '
   {
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",
-      additionalContext: $ctx
+      additionalContext: (
+        "Synapse: this repo has a code graph at synapse/" + $ns + "/ (" + $n + " nodes). " +
+        "If this turn needs to know how the codebase works, read the graph before grepping or " +
+        "opening files -- synapse-query.sh (body/sources/field/symbol), _index.json for " +
+        "path -> owning node. The synapse-query and synapse-node skills have the procedure."
+      )
     }
   }'

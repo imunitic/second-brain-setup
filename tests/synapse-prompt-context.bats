@@ -1,8 +1,12 @@
 #!/usr/bin/env bats
-# Tests claude/hooks/synapse-prompt-context.sh (UserPromptSubmit per-prompt
-# context injection, sb-004). The Obsidian Local REST API is stubbed by
-# tests/fixtures/fake-bin/curl's glob+regexp branch (added for this hook) --
-# see that file's comment for exactly what it simulates.
+# Tests claude/hooks/synapse-prompt-context.sh -- the UserPromptSubmit nudge.
+#
+# It used to search the vault and inject matching node paths; measured against a
+# real 52-node namespace it returned 50 of them for ~1057 tokens per turn, so the
+# search was removed and the reminder kept. These tests therefore assert the
+# opposite of what they used to: the same guards, but a SHORT constant line and
+# no network call at all. The curl stub is still asserted -- as never being
+# reached.
 
 load 'test_helper'
 
@@ -81,34 +85,75 @@ run_hook() {
   [ -z "$output" ]
 }
 
-@test "matching node: additionalContext lists it" {
+@test "namespace present: one short line naming the namespace and node count" {
   make_repo "git@github.com:example/repo.git"
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
-  write_node "$(repo_name)" "Cached backend.md" "Cached_backend invalidates query results when a component changes."
+  write_node "$(repo_name)" "Cached backend.md" "Cached_backend invalidates query results."
+  write_node "$(repo_name)" "Query API.md" "Conditions and validation."
 
   run run_hook "how does Cached_backend invalidate results" "$REPO"
   [ "$status" -eq 0 ]
   ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
-  [[ "$ctx" == *"Cached backend.md"* ]]
+  [[ "$ctx" == *"$(repo_name)"* ]]
+  [[ "$ctx" == *"2 nodes"* ]]     # Index.md is the map, not a node
+  [[ "$ctx" == *"synapse-query.sh"* ]]
 }
 
-@test "prompt matching nothing in the namespace: silent" {
+@test "the nudge never lists nodes, and stays small enough to pay every turn" {
+  # The whole reason the search was removed. A per-turn injection is charged on
+  # every turn including ones with nothing to do with the codebase, so its size
+  # is the feature. ~1057 tokens was the old cost; this pins the new one low and
+  # pins that no node filename can creep back into it.
   make_repo "git@github.com:example/repo.git"
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
-  write_node "$(repo_name)" "Cached backend.md" "Cached_backend invalidates query results when a component changes."
+  local i
+  for i in $(seq 1 30); do
+    write_node "$(repo_name)" "Node $i.md" "Body of node $i."
+  done
 
-  run run_hook "what is your favorite pizza topping today" "$REPO"
+  run run_hook "how does Cached_backend invalidate results" "$REPO"
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  ctx="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+  [[ "$ctx" != *"Node 1.md"* ]]
+  [[ "$ctx" != *"Node 17.md"* ]]
+  # Constant regardless of namespace size: 30 nodes must not cost more than 2.
+  [ "${#ctx}" -lt 400 ]
 }
 
-@test "purely conversational prompt: no distinctive terms extracted, no API call" {
+@test "the same line regardless of what the prompt says" {
+  # It is a standing reminder, not a search result. A conversational prompt gets
+  # it too -- that is the cost of surviving compaction, and why it is one line.
   make_repo "git@github.com:example/repo.git"
   write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
   write_node "$(repo_name)" "Cached backend.md" "Cached_backend invalidates query results."
 
-  run run_hook "how are you doing" "$REPO"
+  run run_hook "how does Cached_backend invalidate results" "$REPO"
+  local a="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+  run run_hook "what is your favorite pizza topping today" "$REPO"
+  local b="$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+  [ "$a" = "$b" ]
+}
+
+@test "no network call is ever made" {
+  # The search endpoint was the only reason this hook needed the vault REST API,
+  # a cert and an API key. None of that is reachable now, so a stubbed curl must
+  # stay untouched -- and the hook must work with no plugin data present at all.
+  make_repo "git@github.com:example/repo.git"
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+  write_node "$(repo_name)" "Cached backend.md" "Cached_backend invalidates query results."
+  rm -rf "$VAULT/.obsidian" "$HOME/.claude/obsidian-local-rest-api-ca.pem"
+
+  run run_hook "how does Cached_backend invalidate results" "$REPO"
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  [ ! -s "$CURL_LOG" ]
+}
+
+@test "a namespace with an Index.md but no nodes says nothing" {
+  make_repo "git@github.com:example/repo.git"
+  write_synapse_index "$(repo_name)" "$(repo_remote_or_path)"
+
+  run run_hook "how does Cached_backend invalidate results" "$REPO"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  [ ! -s "$CURL_LOG" ]
 }
