@@ -251,13 +251,15 @@ it no longer installs, so nothing is left running that the docs stop describing.
 ## Testing
 
 ```sh
-brew install bats-core parallel          # if not already installed
-bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/
+brew install bats-core parallel just     # if not already installed
+just check                               # syntax + suite + generated artefacts, what CI runs
+just test tests/synapse-query.bats       # one file
+bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/   # the suite directly, what `just test` wraps
 ```
 
 `--jobs` needs GNU `parallel` on `PATH`; without it `bats` falls back to running serially, which is
-correct but takes about three times as long (roughly 4.5 minutes against 1.5 here). The speedup comes
-mostly from parallelising *within* each file rather than just across them — `synapse-write-node.bats`
+correct but takes about three times as long (8m40s against 2m37s here, on 12 cores, at 415 tests).
+The speedup comes mostly from parallelising *within* each file rather than just across them — `synapse-write-node.bats`
 alone is a quarter of the total, so across-files-only parallelism would leave it as the critical path.
 
 This is safe because the tests share nothing: `common_setup` gives every single test its own `mktemp`
