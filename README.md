@@ -87,6 +87,10 @@ blocks.
   targets that resolve to no node, which Obsidian renders silently. `symbol <name> "{Node}"` is exact-name
   def/ref lookup across a node's sources — the last-mile step from "a node named the file" to a real
   `file:line`, backed by `synapse-tags-cache.sh` below rather than a fresh tree-sitter pass per query.
+  `callers <name>` answers the complementary repo-wide question — every call site of an exact name, as
+  `path:line ⇥ calling expression` — over the flat index `synapse-build-refs.sh` writes: 0.36s against
+  syrius3's 1.4 GB index. It needs no graph at all (no nodes, no `_index.json`, no vault) and is
+  dispatched ahead of the vault preamble so that stays structurally true rather than merely intended.
   None of them ever pull. `body` prints a node's fenced prose, `sources` its file list
   filtered/counted/grouped by module, `field` one frontmatter scalar. A script rather than direct reads
   because a hub node's `sources` is ~38k tokens and `_index.json` ~350k — everything a script reads
@@ -183,6 +187,15 @@ blocks.
   the cache — never a worker writing the shared file directly. `synapse-write-node.sh` calls this as a
   byproduct of its own hashing; `synapse-query.sh symbol` calls it to lazily backfill whatever a node's
   cache hasn't reached yet. Disable entirely with `SYNAPSE_DISABLE_SYMBOL_CACHE`.
+- `claude/bin/synapse-build-refs.sh` — projects that cache into `$SYNAPSE_WORK_DIR/_refs.tsv`, the flat
+  `name ⇥ def|ref ⇥ kind ⇥ path:line ⇥ expression` index `synapse-query.sh callers` reads. A separate
+  artifact because the constraint is *format*, not size: one `jq` pass over a 4.6 MB cache measured
+  0.064s, which extrapolates to ~13s per query at syrius3's 942 MB. As sorted lines the same data
+  answers in 0.36s. The lookup is `look` (binary search) plus an exact `awk` filter — `look` alone
+  prefix-matches (`bet` returns `beta`), `awk` alone is a 26s full scan. Not `grep`, because *which*
+  grep is on `PATH` decides the answer: 0.15s under ugrep against 8.3s under BSD `/usr/bin/grep`. The
+  `LC_ALL=C sort` here is a contract with that binary search, asserted by the suite rather than left
+  to review, because a collation disagreement returns nothing and reads exactly like "never called".
 
 ## What's NOT portable (per-machine, regenerated fresh each time)
 
@@ -264,7 +277,13 @@ clone/registration idempotency, with `tests/fixtures/fake-bin/{tree-sitter,git}`
 CLI and grammar cloning so no network access or tree-sitter install is needed), `synapse-tags-cache.sh`
 and `synapse-query.sh symbol` (cold tagging, no-op on an unchanged re-run, single-file re-tag on a hash
 change, unsupported-file caching so it's never silently retried, and the writer-side wiring that
-populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), `synapse-vocab.sh` (word
+populates the cache as a byproduct — same fake `tree-sitter`/`git` stubs), `synapse-build-refs.sh` and
+`synapse-query.sh callers` (tag-line parsing including the space-padded name column that silently
+answers nothing untrimmed, unsupported files excluded and counted, exact-not-prefix matching, regex
+metacharacters in a name matched literally, a missing index exiting 1 rather than passing for "never
+called", the no-vault/no-namespace independence that is the point of dispatching it early, and the
+`look` fast path asserted equal to a full scan across mixed-case and punctuation-leading names —
+against hand-written caches, since the tag line is exactly what is under test), `synapse-vocab.sh` (word
 splitting, stopwording, group keying, per-run warning dedup and the empty-result contract, with the
 fake `tree-sitter` emitting the symbols a fixture authored as `symbol:` lines so a vocabulary
 assertion is about the reduction rather than about the stub), `synapse-gate.sh` (the flag boundary

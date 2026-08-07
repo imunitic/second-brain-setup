@@ -81,6 +81,58 @@ its own -- see docs/synapse-graph.md for why.
 Note for agent callers: needs the sandbox disabled (localhost REST API).
 ```
 
+## `synapse-build-refs.sh`
+
+Projects a project's tags cache into a flat, sorted reference index -- the
+artifact `synapse-query.sh callers` reads. One line per tag, so "who calls X"
+is a text lookup rather than a JSON traversal.
+
+```
+Usage: synapse-build-refs.sh [--cache <path>] [--out <path>] [--repo <path>]
+       synapse-build-refs.sh --help
+
+  --cache  the tags cache to project. Default $SYNAPSE_WORK_DIR/_tags_cache.json,
+           i.e. ~/.claude/synapse-work/{repo}@{branch}/_tags_cache.json.
+  --out    where to write the index. Default $SYNAPSE_WORK_DIR/_refs.tsv.
+  --repo   the repo whose work dir supplies those defaults. Default: the git
+           toplevel containing $PWD. Only used to resolve defaults; nothing
+           here reads the working tree.
+
+Output, LC_ALL=C sorted, one tag per line:
+
+  name <TAB> def|ref <TAB> kind <TAB> path:line <TAB> expression
+
+`def|ref` is what tree-sitter calls the tag; `kind` is its syntactic category
+(`class`, `method`, `call`, `implementation`, ...). Both are kept because they
+answer different questions: a `ref` is not necessarily a call -- an
+`implements Foo` clause is `ref | implementation` -- so a callers query that
+filtered on `ref` alone would over-report.
+
+WHY A SEPARATE FILE RATHER THAN QUERYING THE CACHE. The constraint is format,
+not size. Disk is cheap and the cache already lives in the work dir rather
+than the version-controlled vault. What bites is querying JSON at scale: one
+`jq` pass over a 4.6 MB cache measured 0.064s, which extrapolates to ~13s per
+query at syrius3's 942 MB -- for something meant to feel interactive. The same
+data as flat sorted lines is a different regime: measured against a 560 MB
+index, `grep` answered in 0.092s.
+
+THE NAME COLUMN IS SPACE-PADDED IN tree-sitter's OUTPUT and is trimmed here.
+`execute` is emitted as `execute   `, so an exact-match lookup against the raw
+text silently finds nothing -- the failure returns success and no rows, which
+is indistinguishable from "not called anywhere". synapse-query.sh's `symbol`
+already trims for the same reason.
+
+Rebuilt, never appended to: it is derived from the cache and cheap to redo, so
+a partial write from an interrupted run is replaced rather than merged. Files
+the cache marks `unsupported` (no grammar) contribute nothing and are counted
+separately, so "no hits" can be told apart from "never parsed".
+
+Exit codes:
+  0 - index written; prints tags/files/unsupported counts on stderr
+  1 - could not run (no cache, unreadable cache, missing dependency)
+  2 - usage error
+```
+
 ## `synapse-gate.sh`
 
 Flags candidate clusters that own no vocabulary of their own, before anyone
@@ -271,8 +323,34 @@ Usage: synapse-query.sh <subcommand> [args]   (operates on the repo containing $
   links   --check                    link targets that resolve to no node
   symbol  <name> <node>              exact-name def/ref hits across the node's
                                      sources, as path<TAB>tag-line (see below)
+  callers <name>                     repo-wide call sites of an exact name, as
+                                     path:line<TAB>calling expression
+  callers <name> --all               every def and ref, not only calls, as
+                                     def|ref<TAB>kind<TAB>path:line<TAB>expression
 
 <node> may be given with or without the trailing `.md`.
+
+`callers` needs NO graph -- no nodes, no _index.json, no clustering, no vault.
+It reads $SYNAPSE_WORK_DIR/_refs.tsv, the flat index synapse-build-refs.sh
+projects from the tags cache, and nothing else. That is why it is dispatched
+ahead of this script's vault/namespace preamble rather than after it: the
+property is structural, so it keeps answering in a repo where /synapse-init has
+never clustered anything. Build the index with:
+
+  synapse-tags-cache.sh --repo-root . --cache <cache> --paths <path:hash tsv>
+  synapse-build-refs.sh
+
+It is name-based like `symbol`, so hits are candidates with evidence rather
+than resolved callers -- the calling expression is on the line, which usually
+settles the receiver without opening the file. Out of reach, and not worked
+around: reflective invocation, and a call whose receiver sits on another line
+(a fluent chain split across lines). Interface dispatch appears as the
+interface method, which is normally the answer wanted rather than a loss.
+
+`symbol` and `callers` differ in scope, not technique. `symbol` is scoped to
+one node's sources and re-hashes them on every call, so it answers "within this
+subsystem" and costs O(node sources); `callers` is repo-wide over a precomputed
+index, so it answers "anywhere" and costs one pass over a text file.
 
 `symbol` is a name-based, not type-resolved, lookup backed by a per-project
 tags cache ($SYNAPSE_WORK_DIR/_tags_cache.json, default

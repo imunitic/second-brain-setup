@@ -606,3 +606,42 @@ subcommand here. Matching is name-based, not type-resolved: two files both defin
 same short name both come back as separate hits, left for the caller to disambiguate by file, exactly
 the judgment already required without this feature — now backed by exact ranges instead of another
 grep.
+
+### Repo-wide callers: a flat index projected from the same cache
+
+`symbol` answers *within a node*. The complementary question — "who calls this, anywhere in the
+repo?" — is `synapse-query.sh callers <name>`, reading `$SYNAPSE_WORK_DIR/_refs.tsv`, which
+`synapse-build-refs.sh` projects from the tags cache as
+`name ⇥ def|ref ⇥ kind ⇥ path:line ⇥ expression`.
+
+**Why a second artifact rather than querying the cache.** The constraint is format, not size. Disk is
+cheap and the cache already sits outside the version-controlled vault. What bites is querying JSON at
+scale: one `jq` pass over a 4.6 MB cache measured 0.064s, extrapolating to ~13s per query at
+syrius3's 942 MB — for something meant to feel interactive. The same data as flat sorted lines is a
+different regime. Measured on syrius3's 1.4 GB index (5,560,541 tags over 96,513 files, built in
+2m34s from the cache): **0.36s** for `validate`, which has 3,239 call sites.
+
+**The lookup is `look` plus an exact `awk` filter, and both halves are load-bearing.** `look`
+binary-searches the sorted file but *prefix*-matches — asking for `bet` returns `beta` — so alone it
+over-reports; `awk` alone is a full scan, measured at 26s against the same index. Together: 0.235s.
+It is deliberately not `grep`, and the reason is invisible to a benchmark run interactively: *which*
+grep is on `PATH` decides the answer. The same query measured 0.15s under ugrep and **8.3s under BSD
+`/usr/bin/grep`**, and a script cannot assume the interactive shell's grep.
+
+**This couples `callers` to `synapse-build-refs.sh`'s `LC_ALL=C sort`.** `look` compares raw bytes
+when given neither `-d` nor `-f`, which is what that sort produces; sorting under any other collation
+makes the search miss, and a miss returns nothing — indistinguishable from "this name is never
+called". `tests/synapse-callers.bats` asserts the fast path agrees with a full scan across mixed-case
+and punctuation-leading names, so the coupling is enforced rather than left to review.
+
+**`callers` needs no graph at all** — no nodes, no `_index.json`, no clustering, no vault. It is
+dispatched *before* `synapse-query.sh`'s vault/namespace preamble so that property is structural
+rather than merely intended, and it keeps answering in a repo where `/synapse-init` has never run.
+Filling the cache is therefore worth doing on its own, independently of building a graph.
+
+Defaulting to calls only matters for precision: a `ref` is not necessarily a call — an `implements
+Foo` clause is `ref | implementation` — so filtering on reftype alone over-reports. `--all` widens to
+every def and ref when that is what is wanted. As with `symbol`, hits are candidates with evidence
+rather than resolved callers; the calling expression is on the line, which usually settles the
+receiver without opening the file. Out of reach, and not worked around: reflective invocation, and a
+call whose receiver sits on another line. An exact call graph does not resolve reflection either.
