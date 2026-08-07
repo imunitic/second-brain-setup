@@ -253,6 +253,7 @@ it no longer installs, so nothing is left running that the docs stop describing.
 ```sh
 brew install bats-core parallel just     # if not already installed
 just check                               # syntax + suite + generated artefacts, what CI runs
+just test-changed                        # inner loop: only the tests covering what you edited
 just test tests/synapse-query.bats       # one file
 bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/   # the suite directly, what `just test` wraps
 ```
@@ -261,6 +262,15 @@ bats --jobs "$(getconf _NPROCESSORS_ONLN)" tests/   # the suite directly, what `
 correct but takes about three times as long (8m40s against 2m37s here, on 12 cores, at 415 tests).
 The speedup comes mostly from parallelising *within* each file rather than just across them — `synapse-write-node.bats`
 alone is a quarter of the total, so across-files-only parallelism would leave it as the critical path.
+
+`just test-changed` narrows to the tests that name the files you edited, plus the integration files
+(`synapse-pipeline`, `synapse-rebuild-scenario`, `setup`) which name almost nothing and exercise
+almost everything. A change to `synapse-build-refs.sh` runs 55 tests in 40s rather than 415 in 2m37s.
+The mapping is derived by grep rather than maintained as a list, because the coupling is dense enough
+that a hand-written list would silently stop matching — `synapse-tags.sh` alone is exercised by seven
+files. **Coverage by grep is a lower bound**: a test can exercise a script without naming its path, via
+an installed copy another script invokes. So this is the inner loop, and `just check` is still the
+gate before committing.
 
 This is safe because the tests share nothing: `common_setup` gives every single test its own `mktemp`
 directory as `$HOME`, with its own scratch git repo and Vault inside it, and `common_teardown` removes

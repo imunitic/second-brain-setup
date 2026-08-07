@@ -42,6 +42,45 @@ test *FILES:
 test-serial *FILES:
     bats {{ if FILES == "" { "tests/" } else { FILES } }}
 
+# THIS IS FOR THE INNER LOOP, NOT A SUBSTITUTE FOR `just check`. It runs the tests
+# that name the files you give it, and coverage by grep is a lower bound: a test can
+# exercise a script without ever spelling its path, through an installed copy that
+# another script invokes. The integration files are therefore always included --
+# pipeline, rebuild-scenario and setup name almost nothing and exercise almost
+# everything. Commit behind `just check`, always.
+#
+# Groups are derived rather than listed on purpose. A hand-maintained group list is
+# one more thing that silently stops matching reality, and the coupling here is dense
+# enough to guarantee it: synapse-tags.sh alone is exercised by seven files.
+
+# Run only the tests covering the given source files, plus the integration ones.
+test-for +PATHS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    always="tests/synapse-pipeline.bats tests/synapse-rebuild-scenario.bats tests/setup.bats"
+    picked=""
+    for p in {{ PATHS }}; do
+        b="$(basename "$p")"
+        # A test file given directly is itself the target.
+        case "$p" in tests/*.bats) picked="$picked $p"; continue ;; esac
+        hits="$(grep -l -- "$b" tests/*.bats 2>/dev/null || true)"
+        [ -n "$hits" ] || echo "no test names '$b' -- relying on the integration files" >&2
+        picked="$picked $hits"
+    done
+    files="$(printf '%s %s' "$picked" "$always" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
+    echo "running: $(printf '%s' "$files" | wc -w | tr -d ' ') files" >&2
+    just test $files
+
+# Same, for whatever you have changed against the upstream branch.
+test-changed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    changed="$(git diff --name-only @{u}.. 2>/dev/null; git diff --name-only; git diff --name-only --cached)"
+    changed="$(printf '%s' "$changed" | sort -u | grep -v '^$' || true)"
+    if [ -z "$changed" ]; then echo "nothing changed"; exit 0; fi
+    echo "changed:"; printf '  %s\n' $changed
+    just test-for $changed
+
 # Catches the class of typo that only surfaces when a rarely-taken branch runs --
 # an unbalanced quote inside an awk program embedded in a heredoc, say.
 
