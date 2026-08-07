@@ -587,9 +587,20 @@ description of a disposable cache. The cost showed up at scale: on syrius3 it is
 history. Deleting it costs exactly one re-tag, which is the definition of the wrong thing to version.
 `synapse-tags-cache.sh` already took `--cache <path>`, so only the two hardcoded call sites moved.
 
-**Query time is a pure cache read.** `symbol` resolves the node's `sources`, looks up each path in the
-cache, and filters for an exact match on the requested name — no tree-sitter invocation at all when
-everything's already cached. A cache miss (a file the cache hasn't reached yet — e.g. `/synapse-init`
+**Query time is a pure cache read, and it is one parse of the cache rather than one per file.** That
+distinction is the whole cost model. `symbol` originally ran `jq` once per source path, making the
+cost `node_sources × cache_bytes`: a 159-file node against syrius3's 800 MB cache did not finish in
+600s, and even fw-core's 43 MB took 113s on a large node. It now takes a single `jq` pass into a
+marker-prefixed text stream and joins it with `awk` — the same shape `synapse-tags-cache.sh` already
+used, and for the same reason. Measured after: fw-core 113s → **3.2s**, syrius3 >600s → **50s**.
+
+The syrius3 figure is the residual floor, not a remaining bug: 50s is what parsing 800 MB of JSON
+costs once. `symbol` is inherently node-scoped and cache-backed, so that is its bound. When
+interactivity matters more than node scoping, `callers` over the flat index answers the same shape of
+question in 0.36s — see the section below.
+
+`symbol` resolves the node's `sources`, looks up each path in the cache, and filters for an exact
+match on the requested name — no tree-sitter invocation at all when everything's already cached. A cache miss (a file the cache hasn't reached yet — e.g. `/synapse-init`
 sampled rather than tagging every file in a large repo) triggers a lazy backfill, parallelized via
 `xargs -P` (capped at the machine's core count) rather than one file at a time: each worker tags one
 file into its own temp result, and a single sequential step afterward merges every result into the

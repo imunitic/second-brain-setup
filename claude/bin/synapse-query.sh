@@ -899,24 +899,59 @@ cmd_symbol() {
     return 0
   fi
 
-  # For each source path: a cache miss or an unsupported file is reported
-  # distinctly (stderr) -- never conflated with "checked, symbol not present",
-  # which stays silent on stdout like every other reporting subcommand here.
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    entry="$(jq -c --arg p "$path" '.[$p] // empty' "$CACHE_FILE")"
-    if [ -z "$entry" ]; then
-      echo "synapse-query: $path not checked (no cache entry)" >&2
-      continue
-    fi
-    if [ "$(printf '%s' "$entry" | jq -r '.unsupported')" = "true" ]; then
-      echo "synapse-query: $path not checked (unsupported: no grammar, tree-sitter, or C compiler)" >&2
-      continue
-    fi
-    printf '%s' "$entry" | jq -r '.tags' \
-      | awk -F'\t' -v n="$name" '{ nm=$1; gsub(/^[ \t]+|[ \t]+$/, "", nm); if (nm == n) print }' \
-      | while IFS= read -r line; do printf '%s\t%s\n' "$path" "$line"; done
-  done < "$WORK/symbol-paths.txt"
+  # ONE jq parse of the cache, however large -- then a plain text join, exactly
+  # as synapse-tags-cache.sh does for the same reason. The previous shape ran
+  # `jq` once per source path, so cost was node_sources x cache_bytes rather
+  # than cache_bytes: a 159-file node against syrius3's 800 MB cache did not
+  # finish in 600s, and even fw-core's 43 MB took 113s on a large node.
+  #
+  # Marker first, path second, so the tag line -- which contains tabs of its own
+  # -- is unambiguously "everything after the second tab" rather than a field
+  # count that its own tabs would change.
+  #   U <TAB> path                  cached, but not checkable (no grammar)
+  #   P <TAB> path                  cached and checked, tags follow (possibly none)
+  #   T <TAB> path <TAB> tag line   one per tag
+  jq -r '
+    to_entries[]
+    | .key as $p
+    | .value as $v
+    | if $v.unsupported == true then "U\t\($p)"
+      else ("P\t\($p)"),
+           (($v.tags // "") | split("\n")[] | select(. != "") | "T\t\($p)\t\(.)")
+      end
+  ' "$CACHE_FILE" > "$WORK/symbol-cache.tsv" 2>/dev/null \
+    || { echo "synapse-query: unreadable tags cache: $CACHE_FILE" >&2; return 0; }
+
+  # A cache miss and an unsupported file are reported distinctly on stderr --
+  # never conflated with "checked, symbol not present", which stays silent on
+  # stdout like every other reporting subcommand here. Requested-path order is
+  # preserved by driving the output loop from the paths file, not the cache.
+  LC_ALL=C awk -F'\t' -v n="$name" '
+    FNR == NR {
+      mk = $1; p = $2
+      if (mk == "U") { st[p] = "U" }
+      else if (mk == "P") { if (!(p in st)) st[p] = "P" }
+      else if (mk == "T") {
+        nm = $3
+        gsub(/^[ \t]+|[ \t]+$/, "", nm)
+        if (nm == n) hit[p] = hit[p] substr($0, length(mk) + length(p) + 3) "\n"
+      }
+      next
+    }
+    $0 == "" { next }
+    {
+      p = $0
+      if (!(p in st)) { print "synapse-query: " p " not checked (no cache entry)" > "/dev/stderr"; next }
+      if (st[p] == "U") {
+        print "synapse-query: " p " not checked (unsupported: no grammar, tree-sitter, or C compiler)" > "/dev/stderr"
+        next
+      }
+      if (p in hit) {
+        m = split(hit[p], L, "\n")
+        for (i = 1; i <= m; i++) if (L[i] != "") print p "\t" L[i]
+      }
+    }
+  ' "$WORK/symbol-cache.tsv" "$WORK/symbol-paths.txt"
 }
 
 # $SUB was validated above, so this needs no catch-all.
