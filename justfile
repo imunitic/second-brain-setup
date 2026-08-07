@@ -45,9 +45,17 @@ test-serial *FILES:
 # THIS IS FOR THE INNER LOOP, NOT A SUBSTITUTE FOR `just check`. It runs the tests
 # that name the files you give it, and coverage by grep is a lower bound: a test can
 # exercise a script without ever spelling its path, through an installed copy that
-# another script invokes. The integration files are therefore always included --
-# pipeline, rebuild-scenario and setup name almost nothing and exercise almost
-# everything. Commit behind `just check`, always.
+# another script invokes. So this narrows, it does not verify. Commit behind
+# `just check`, always.
+#
+# `setup.bats` is the one always-run file: it is cheap and it catches the install
+# breaking, which nothing else would. `synapse-pipeline` and
+# `synapse-rebuild-scenario` were also in this set and have been taken out, on
+# measurement -- they are 12 tests but 21% of the suite's CPU, and
+# rebuild-scenario's slowest single test is 50s, so together they were 35s of a 42s
+# narrowed run. Keeping them made the inner loop 6x slower to re-cover ground
+# `check` covers anyway, which is a bad trade for a loop whose whole value is being
+# fast enough to actually run.
 #
 # Groups are derived rather than listed on purpose. A hand-maintained group list is
 # one more thing that silently stops matching reality, and the coupling here is dense
@@ -57,7 +65,7 @@ test-serial *FILES:
 test-for +PATHS:
     #!/usr/bin/env bash
     set -euo pipefail
-    always="tests/synapse-pipeline.bats tests/synapse-rebuild-scenario.bats tests/setup.bats"
+    always="tests/setup.bats"
     picked=""
     for p in {{ PATHS }}; do
         b="$(basename "$p")"

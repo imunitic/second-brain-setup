@@ -263,9 +263,9 @@ correct but takes about three times as long (8m40s against 2m37s here, on 12 cor
 The speedup comes mostly from parallelising *within* each file rather than just across them — `synapse-write-node.bats`
 alone is a quarter of the total, so across-files-only parallelism would leave it as the critical path.
 
-`just test-changed` narrows to the tests that name the files you edited, plus the integration files
-(`synapse-pipeline`, `synapse-rebuild-scenario`, `setup`) which name almost nothing and exercise
-almost everything. A change to `synapse-build-refs.sh` runs 55 tests in 40s rather than 415 in 2m37s.
+`just test-changed` narrows to the tests that name the files you edited, plus `setup.bats`, which is
+cheap and catches the install breaking. A change to `synapse-build-refs.sh` runs in 8s rather than
+2m37s for the full suite.
 The mapping is derived by grep rather than maintained as a list, because the coupling is dense enough
 that a hand-written list would silently stop matching — `synapse-tags.sh` alone is exercised by seven
 files. **Coverage by grep is a lower bound**: a test can exercise a script without naming its path, via
