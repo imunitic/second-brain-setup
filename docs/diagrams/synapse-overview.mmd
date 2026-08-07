@@ -40,7 +40,7 @@ flowchart TB
         direction TB
         G1["/synapse-init<br/>cluster + write nodes"]
         G2["two-tier staleness<br/>+ lazy regeneration"]
-        G3["synapse-query.sh<br/>body · sources · links · symbol"]
+        G3["synapse-query.sh<br/>body · sources · links · symbol · callers"]
         G1 --> G2 --> G3
     end
 
@@ -49,7 +49,7 @@ flowchart TB
         VDESIGNS["designs/"]
         VPROJECTS["projects/<br/>dev-log notes AND<br/>compiled task notes -- shared"]
         VRESEARCH["research/ · scratchpad/ · inbox/"]
-        VSYNAPSE["synapse/{repo}/<br/>nodes + _index.json + _tags_cache.json"]
+        VSYNAPSE["synapse/{repo}/<br/>nodes + _index.json<br/>(caches live in the work dir)"]
         VDESIGNS ~~~ VPROJECTS ~~~ VRESEARCH ~~~ VSYNAPSE
     end
 

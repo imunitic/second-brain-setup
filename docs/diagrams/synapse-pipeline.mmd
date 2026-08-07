@@ -70,6 +70,7 @@ flowchart TB
     subgraph WORK["WORK DIR · ~/.claude/synapse-work/{repo}@{branch}/"]
         direction LR
         TAGSCACHE["_tags_cache.json"]
+        REFSIDX["_refs.tsv"]
         WORDS["groupwords.tsv · counts.tsv"]
     end
 
@@ -83,6 +84,8 @@ flowchart TB
         direction TB
         QUERY["synapse-query.sh<br/>body · sources · field"]
         SYMBOL["synapse-query.sh symbol"]
+        REFS["synapse-build-refs.sh"]
+        CALLERS["synapse-query.sh callers"]
         NODESKILL["synapse-node skill<br/>Tier 2"]
         STALE1["synapse-staleness.sh<br/>Tier 1"]
         STALE2["synapse-query.sh stale"]
@@ -104,14 +107,17 @@ flowchart TB
     NODE -.->|"sources"| SYMBOL
     TAGSCACHE -.->|"read"| SYMBOL
     SYMBOL -.->|"backfill"| TAGSCACHE
+    TAGSCACHE -.->|"project"| REFS
+    REFS -.-> REFSIDX
+    REFSIDX -.->|"look + awk"| CALLERS
     REBUILD ==>|"re-writes nodes"| WRITE
     CLEAN -.->|"deletes namespace"| NODE
 
     class ORIENT,PROSE model
     class MANIFEST seam
-    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,VOCAB,GATE,RANK,QUERY,SYMBOL,STALE2,DRIFT,GROUND,CLEAN script
+    class LISTS,PUSH,WRITE,IDX,PIDX,TAGS,VOCAB,GATE,RANK,QUERY,SYMBOL,REFS,CALLERS,STALE2,DRIFT,GROUND,CLEAN script
     class NODE,JSON,INDEX,AUX vault
-    class TAGSCACHE,WORDS work
+    class TAGSCACHE,REFSIDX,WORDS work
     class STALE1 hook
     class REBUILD,NODESKILL cmd
 

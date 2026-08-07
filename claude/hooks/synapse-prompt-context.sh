@@ -96,8 +96,8 @@ jq -n --arg ns "$REPO_NAME" --arg n "$NODES" '
       additionalContext: (
         "Synapse: this repo has a code graph at synapse/" + $ns + "/ (" + $n + " nodes). " +
         "If this turn needs to know how the codebase works, read the graph before grepping or " +
-        "opening files -- synapse-query.sh (body/sources/field/symbol), _index.json for " +
-        "path -> owning node. The synapse-query and synapse-node skills have the procedure."
+        "opening files -- synapse-query.sh (body/sources/field/symbol/callers), _index.json " +
+        "for path -> owning node. The synapse-query and synapse-node skills have the procedure."
       )
     }
   }'
