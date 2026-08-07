@@ -81,6 +81,10 @@ into `status:` either — always go through this skill, which caps at
    own docs. If no notes section exists, same call with
    `createTargetIfMissing: true`.
 
+The vault_patch hazards below are the task-note-specific instance of a general rule; the
+`synapse-vault` skill carries the full list (H1 replace, nested heading paths, frontmatter
+re-serialisation) for every note, not just task notes.
+
 **Do not use `vault_patch` with `operation: replace` on the top-level
 heading to edit checklist items.** Verified by testing: "content beneath
 heading" for a top-level (`#`) heading extends through *all* nested

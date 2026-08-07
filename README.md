@@ -36,11 +36,17 @@ your call).
   delegate to `synapse-note.md --task` and `skills/synapse-task/`, not a separate mechanism.
 - `claude/skills/synapse-task/` — proactive task-status tracking.
 
-Two of the skills are knowledge rather than procedure, holding what several components need but none
-owns: `claude/skills/synapse-node-format/` (the node contract, loaded by `/synapse-init`, the
-`synapse-node` skill and `/synapse-rebuild`, all of which write nodes) and
+Three of the skills are knowledge rather than procedure, holding what several components need but
+none owns: `claude/skills/synapse-node-format/` (the node contract, loaded by `/synapse-init`, the
+`synapse-node` skill and `/synapse-rebuild`, all of which write nodes),
 `claude/skills/synapse-orientation/` (how to work out where meaning lives in an unfamiliar tree,
-loaded by a first build and by rebuild's re-orient class, and useful on its own terms). A skill does
+loaded by a first build and by rebuild's re-orient class, and useful on its own terms), and
+`claude/skills/synapse-vault/` (the vault is pull-only apart from `Index.md`, so search it before
+answering from your own reasoning — plus the `vault_patch` operations that destroy a note while
+returning success). That last one has a deliberately broad trigger: its rules previously lived only
+in `synapse-task`, whose description scopes it to *task* notes, so they never loaded when editing
+anything else in the vault — and the H1-replace trap it documents was then hit twice on notes that
+skill does not cover. A skill does
 not have to *do* something — being loadable knowledge is the point, and it is what keeps one
 description of the node format instead of three.
 

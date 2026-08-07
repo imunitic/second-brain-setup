@@ -49,6 +49,7 @@ hook_count() {
   # how skills are installed.
   [ -f "$HOME/.claude/skills/synapse-node-format/SKILL.md" ]
   [ -f "$HOME/.claude/skills/synapse-orientation/SKILL.md" ]
+  [ -f "$HOME/.claude/skills/synapse-vault/SKILL.md" ]
 
   # Every skill in the repo installs, without the installer naming any of them. This
   # is the assertion that would have caught a new skill being added and forgotten.
